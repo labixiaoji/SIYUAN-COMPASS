@@ -1,9 +1,10 @@
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.schemas.report import ReportFeedback, ReportFeedbackInput
+from app.services.auth import require_user
 from app.storage.json_db import find_report, save_feedback
 
 router = APIRouter(tags=["feedback"])
@@ -13,10 +14,12 @@ def valid_score(value: int) -> bool:
     return isinstance(value, int) and 1 <= value <= 5
 
 
-def _submit_feedback(report_id: str, input_data: ReportFeedbackInput):
+def _submit_feedback(report_id: str, input_data: ReportFeedbackInput, user):
     report = find_report(report_id)
     if not report:
         raise HTTPException(status_code=404, detail={"error": "报告不存在"})
+    if user["role"] != "admin" and report.userId != user["id"]:
+        raise HTTPException(status_code=403, detail={"error": "无权反馈该报告"})
 
     invalid = [
         key
@@ -43,7 +46,18 @@ def _submit_feedback(report_id: str, input_data: ReportFeedbackInput):
 
 
 @router.post("/reports/feedback")
-def submit_feedback_by_query(input_data: ReportFeedbackInput, report_id: str = Query(alias="reportId")):
-    return _submit_feedback(report_id, input_data)
+def submit_feedback_by_query(
+    input_data: ReportFeedbackInput,
+    report_id: str = Query(alias="reportId"),
+    user=Depends(require_user),
+):
+    return _submit_feedback(report_id, input_data, user)
 
 
+@router.post("/reports/{report_id}/feedback")
+def submit_feedback(
+    report_id: str,
+    input_data: ReportFeedbackInput,
+    user=Depends(require_user),
+):
+    return _submit_feedback(report_id, input_data, user)

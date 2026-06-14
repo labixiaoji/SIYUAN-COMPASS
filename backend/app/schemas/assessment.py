@@ -23,21 +23,29 @@ class InterestScores(BaseModel):
 
 class AssessmentResponseInput(BaseModel):
     grade: str
+    gender: str
     collegeMajor: str
     hometown: Optional[str] = None
-    preferredCity: str
-    careerConfusions: list[str]
-    mainConfusionText: Optional[str] = None
-    educationPath: str
+    mastersIntention: str
+    mastersPlan: Optional[str] = None
+    phdIntention: str
+    phdPlan: Optional[str] = None
     educationPathReasons: list[str]
     educationCertainty: int = Field(ge=1, le=5)
-    phdIntention: str
-    phdReasons: list[str] = Field(default_factory=list)
-    fiveYearPriorities: list[str]
-    targetIndustries: list[str]
-    futureRoleType: str
-    lifePreference: str
-    tenYearSelfDescription: Optional[str] = None
+    fiveYearCity: str
+    fiveYearIncome: str
+    fiveYearIndustry: str
+    fiveYearRole: str
+    fiveYearFamilyStatus: str
+    fiveYearHousingPlan: str
+    fiveYearHobbiesSkills: str
+    tenYearCity: str
+    tenYearIncome: str
+    tenYearIndustry: str
+    tenYearRole: str
+    tenYearFamilyStatus: str
+    tenYearHousingPlan: str
+    tenYearHobbiesSkills: str
     topValuesRanked: list[str]
     abilityScores: AbilityScores
     interestScores: InterestScores
@@ -45,8 +53,11 @@ class AssessmentResponseInput(BaseModel):
     missingResources: list[str]
     majorOutcomeAwareness: str
     targetJobAwareness: str
+    jobInfoChannels: list[str]
     healthEnergyStatus: str
     exerciseFrequency: Optional[str] = None
+    careerConfusions: list[str]
+    mainConfusionText: Optional[str] = None
     userId: Optional[str] = None
 
 

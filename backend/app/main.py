@@ -3,10 +3,12 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.admin import router as admin_router
 from app.api.assessments import router as assessments_router
+from app.api.auth import router as auth_router
 from app.api.feedback import router as feedback_router
 from app.api.llm import router as llm_router
 from app.api.reports import router as reports_router
 from app.core.config import get_settings
+from app.storage.json_db import ensure_admin_account, ensure_storage
 
 settings = get_settings()
 
@@ -26,6 +28,13 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.on_event("startup")
+def startup() -> None:
+    ensure_storage()
+    ensure_admin_account()
+
+
+app.include_router(auth_router, prefix="/api")
 app.include_router(assessments_router, prefix="/api")
 app.include_router(reports_router, prefix="/api")
 app.include_router(feedback_router, prefix="/api")

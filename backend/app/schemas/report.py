@@ -1,12 +1,8 @@
 from __future__ import annotations
 
-from typing import Literal, Optional, Union
+from typing import Any, Literal, Optional
 
-from pydantic import BaseModel
-
-from app.schemas.assessment import AssessmentResponse
-from app.schemas.profile import CareerProfile
-
+from pydantic import BaseModel, Field
 
 class CareerBlueprintReport(BaseModel):
     id: str
@@ -21,10 +17,17 @@ class CareerBlueprintReport(BaseModel):
     errorMessage: Optional[str] = None
     modelName: str
     promptVersion: str
-    inputSnapshot: dict[str, Union[AssessmentResponse, CareerProfile]]
+    inputSnapshot: dict[str, Any]
     retryCount: int
     createdAt: str
     updatedAt: str
+    editedAt: Optional[str] = None
+    editedBy: Optional[str] = None
+
+
+class AdminReportUpdate(BaseModel):
+    title: str = Field(min_length=1, max_length=100)
+    content: str = Field(min_length=1)
 
 
 class ReportFeedbackInput(BaseModel):

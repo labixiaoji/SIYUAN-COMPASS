@@ -7,7 +7,13 @@ def is_deepseek_configured() -> bool:
     return bool(get_settings().deepseek_api_key)
 
 
-async def create_deepseek_chat_completion(messages: list[dict[str, str]]) -> dict[str, str]:
+async def create_deepseek_chat_completion(
+    messages: list[dict[str, str]],
+    *,
+    temperature: float = 0.4,
+    max_tokens: int = 10000,
+    json_mode: bool = False,
+) -> dict[str, str]:
     settings = get_settings()
     if not settings.deepseek_api_key:
         raise RuntimeError("缺少 DEEPSEEK_API_KEY，已跳过 DeepSeek 调用。")
@@ -23,9 +29,10 @@ async def create_deepseek_chat_completion(messages: list[dict[str, str]]) -> dic
             json={
                 "model": settings.deepseek_model,
                 "messages": messages,
-                "temperature": 0.4,
-                "max_tokens": 2600,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
                 "stream": False,
+                **({"response_format": {"type": "json_object"}} if json_mode else {}),
             },
         )
         data = response.json()
@@ -38,4 +45,9 @@ async def create_deepseek_chat_completion(messages: list[dict[str, str]]) -> dic
     if not content:
         raise RuntimeError("DeepSeek API 未返回报告内容。")
 
-    return {"content": content, "modelName": settings.deepseek_model}
+    finish_reason = data.get("choices", [{}])[0].get("finish_reason", "")
+    return {
+        "content": content,
+        "modelName": settings.deepseek_model,
+        "finishReason": finish_reason,
+    }

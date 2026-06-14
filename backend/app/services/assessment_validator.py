@@ -2,12 +2,24 @@ from app.schemas.assessment import AssessmentResponseInput
 
 REQUIRED_STRING_FIELDS = [
     "grade",
+    "gender",
     "collegeMajor",
-    "preferredCity",
-    "educationPath",
+    "mastersIntention",
     "phdIntention",
-    "futureRoleType",
-    "lifePreference",
+    "fiveYearCity",
+    "fiveYearIncome",
+    "fiveYearIndustry",
+    "fiveYearRole",
+    "fiveYearFamilyStatus",
+    "fiveYearHousingPlan",
+    "fiveYearHobbiesSkills",
+    "tenYearCity",
+    "tenYearIncome",
+    "tenYearIndustry",
+    "tenYearRole",
+    "tenYearFamilyStatus",
+    "tenYearHousingPlan",
+    "tenYearHobbiesSkills",
     "majorOutcomeAwareness",
     "targetJobAwareness",
     "healthEnergyStatus",
@@ -30,21 +42,9 @@ def validate_assessment(input_data: AssessmentResponseInput) -> list[str]:
         if not _has_text(data.get(field)):
             errors.append(f"{field} 不能为空")
 
-    if not _has_array(input_data.careerConfusions):
-        errors.append("careerConfusions 至少选择 1 项")
-    if len(input_data.careerConfusions) > 3:
-        errors.append("careerConfusions 最多选择 3 项")
     if not _has_array(input_data.educationPathReasons):
         errors.append("educationPathReasons 至少选择 1 项")
-    if not _has_array(input_data.fiveYearPriorities):
-        errors.append("fiveYearPriorities 至少选择 1 项")
-    if len(input_data.fiveYearPriorities) > 3:
-        errors.append("fiveYearPriorities 最多选择 3 项")
-    if not _has_array(input_data.targetIndustries):
-        errors.append("targetIndustries 至少选择 1 项")
-    if len(input_data.targetIndustries) > 2:
-        errors.append("targetIndustries 最多选择 2 项")
-    if not _has_array(input_data.topValuesRanked, 3):
+    if len(input_data.topValuesRanked) != 3:
         errors.append("topValuesRanked 需要选择 3 项")
     if not _has_array(input_data.currentPreparations):
         errors.append("currentPreparations 至少选择 1 项")
@@ -52,5 +52,11 @@ def validate_assessment(input_data: AssessmentResponseInput) -> list[str]:
         errors.append("missingResources 至少选择 1 项")
     if len(input_data.missingResources) > 3:
         errors.append("missingResources 最多选择 3 项")
+    if not _has_array(input_data.jobInfoChannels):
+        errors.append("jobInfoChannels 至少选择 1 项")
+    if not _has_array(input_data.careerConfusions):
+        errors.append("careerConfusions 至少选择 1 项")
+    if len(input_data.careerConfusions) > 3:
+        errors.append("careerConfusions 最多选择 3 项")
 
     return errors

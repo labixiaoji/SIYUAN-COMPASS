@@ -11,6 +11,11 @@ class Settings(BaseSettings):
     deepseek_model: str = "deepseek-chat"
     llm_timeout_seconds: float = 180
     frontend_origins: str = "http://localhost:5173"
+    auth_secret: str = "change-this-secret-before-production"
+    auth_token_hours: int = 72
+    admin_username: str = "admin"
+    admin_password: str = "admin12345"
+    admin_display_name: str = "系统管理员"
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
