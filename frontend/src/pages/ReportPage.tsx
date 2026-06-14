@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { fetchReport } from "../api/reports";
+import { useAuth } from "../auth/AuthContext";
 import { ReportRenderer } from "../components/ReportRenderer";
 import type { CareerBlueprintReport } from "../types/report";
 
 export function ReportPage() {
+  const { user } = useAuth();
   const { reportId } = useParams();
   const [report, setReport] = useState<CareerBlueprintReport | null>(null);
   const [error, setError] = useState("");
@@ -40,8 +42,17 @@ export function ReportPage() {
       </div>
       <ReportRenderer content={report.content} />
       <div className="actions">
-        <Link className="button secondary" to="/assessment">重新填写</Link>
-        <Link className="button" to={`/reports/${report.id}/feedback`}>提交反馈</Link>
+        {user?.role === "admin" ? (
+          <>
+            <Link className="button secondary" to="/admin">返回后台</Link>
+            <Link className="button" to={`/admin/reports/${report.id}/edit`}>编辑报告</Link>
+          </>
+        ) : (
+          <>
+            <Link className="button secondary" to="/assessment">重新填写</Link>
+            <Link className="button" to={`/reports/${report.id}/feedback`}>提交反馈</Link>
+          </>
+        )}
       </div>
     </main>
   );

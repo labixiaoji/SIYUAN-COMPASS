@@ -5,6 +5,10 @@ export function fetchReport(reportId: string) {
   return apiRequest<CareerBlueprintReport>(`/reports/${reportId}`);
 }
 
+export function fetchMyReports() {
+  return apiRequest<{ reports: CareerBlueprintReport[] }>("/reports/mine");
+}
+
 export function submitReportFeedback(
   reportId: string,
   body: {

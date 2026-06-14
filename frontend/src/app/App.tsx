@@ -1,28 +1,49 @@
 import { Link, NavLink, Route, Routes } from "react-router-dom";
+import { useAuth } from "../auth/AuthContext";
+import { ProtectedRoute } from "../auth/ProtectedRoute";
 import { AdminPage } from "../pages/AdminPage";
+import { AdminReportEditPage } from "../pages/AdminReportEditPage";
 import { AssessmentPage } from "../pages/AssessmentPage";
 import { FeedbackPage } from "../pages/FeedbackPage";
 import { HomePage } from "../pages/HomePage";
+import { LoginPage } from "../pages/LoginPage";
+import { MyReportsPage } from "../pages/MyReportsPage";
+import { RegisterPage } from "../pages/RegisterPage";
 import { ReportPage } from "../pages/ReportPage";
 
 export function App() {
+  const { user, logout } = useAuth();
+
   return (
     <>
       <header className="topbar">
         <div className="shell topbar-inner">
           <Link className="brand" to="/">思源 Compass</Link>
           <nav className="nav">
-            <NavLink to="/assessment">开始填写</NavLink>
-            <NavLink to="/admin">后台</NavLink>
+            {user?.role === "student" && <NavLink to="/assessment">开始填写</NavLink>}
+            {user?.role === "student" && <NavLink to="/my-reports">我的报告</NavLink>}
+            {user?.role === "admin" && <NavLink to="/admin">管理员后台</NavLink>}
+            {user ? (
+              <>
+                <span className="nav-user">{user.displayName}</span>
+                <button className="nav-button" onClick={logout}>退出</button>
+              </>
+            ) : (
+              <NavLink to="/login">登录</NavLink>
+            )}
           </nav>
         </div>
       </header>
       <Routes>
         <Route path="/" element={<HomePage />} />
-        <Route path="/assessment" element={<AssessmentPage />} />
-        <Route path="/reports/:reportId" element={<ReportPage />} />
-        <Route path="/reports/:reportId/feedback" element={<FeedbackPage />} />
-        <Route path="/admin" element={<AdminPage />} />
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/register" element={<RegisterPage />} />
+        <Route path="/assessment" element={<ProtectedRoute role="student"><AssessmentPage /></ProtectedRoute>} />
+        <Route path="/my-reports" element={<ProtectedRoute role="student"><MyReportsPage /></ProtectedRoute>} />
+        <Route path="/reports/:reportId" element={<ProtectedRoute><ReportPage /></ProtectedRoute>} />
+        <Route path="/reports/:reportId/feedback" element={<ProtectedRoute role="student"><FeedbackPage /></ProtectedRoute>} />
+        <Route path="/admin" element={<ProtectedRoute role="admin"><AdminPage /></ProtectedRoute>} />
+        <Route path="/admin/reports/:reportId/edit" element={<ProtectedRoute role="admin"><AdminReportEditPage /></ProtectedRoute>} />
       </Routes>
     </>
   );

@@ -14,6 +14,8 @@ export type CareerBlueprintReport = {
   retryCount: number;
   createdAt: string;
   updatedAt: string;
+  editedAt?: string;
+  editedBy?: string;
 };
 
 export type AdminMetrics = {
@@ -27,4 +29,18 @@ export type AdminMetrics = {
   averageRecommendScore: number;
   lowScoreReports: string[];
   recentReports: CareerBlueprintReport[];
+};
+
+export type AdminRecord = {
+  report: CareerBlueprintReport;
+  student: {
+    id: string;
+    username: string;
+    displayName: string;
+  };
+  assessment: {
+    grade: string;
+    collegeMajor: string;
+    submittedAt: string;
+  };
 };

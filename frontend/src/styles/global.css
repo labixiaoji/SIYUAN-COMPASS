@@ -202,6 +202,12 @@ select {
   margin-bottom: 24px;
 }
 
+.form-subtitle {
+  margin: 8px 0 24px;
+  font-size: 20px;
+  letter-spacing: 0;
+}
+
 .field label,
 .field legend {
   display: block;
@@ -281,6 +287,134 @@ select {
   margin-top: 24px;
 }
 
+.nav-user {
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.nav-button {
+  background: transparent;
+  border: 0;
+  color: var(--ink);
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+}
+
+.auth-page {
+  align-items: center;
+  display: flex;
+  justify-content: center;
+  min-height: calc(100vh - 72px);
+  padding-bottom: 48px;
+  padding-top: 48px;
+}
+
+.auth-card {
+  max-width: 460px;
+  padding: 32px;
+  width: 100%;
+}
+
+.auth-card h1 {
+  margin-top: 0;
+}
+
+.auth-submit {
+  margin-top: 12px;
+  width: 100%;
+}
+
+.auth-switch {
+  color: var(--muted);
+  margin: 18px 0 0;
+  text-align: center;
+}
+
+.success {
+  background: #edf8f4;
+  border: 1px solid #afd8ca;
+  border-radius: 6px;
+  color: #226957;
+  margin-top: 16px;
+  padding: 12px;
+}
+
+.admin-records {
+  margin-top: 24px;
+}
+
+.admin-section-head {
+  align-items: start;
+  display: flex;
+  gap: 20px;
+  justify-content: space-between;
+}
+
+.admin-section-head h2 {
+  margin: 0 0 6px;
+}
+
+.admin-table-wrap {
+  margin-top: 18px;
+  overflow-x: auto;
+}
+
+.admin-table {
+  border-collapse: collapse;
+  min-width: 800px;
+  width: 100%;
+}
+
+.admin-table th,
+.admin-table td {
+  border-bottom: 1px solid var(--line);
+  padding: 13px 12px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.admin-table th {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.admin-table td span {
+  color: var(--muted);
+  display: block;
+  font-size: 13px;
+  margin-top: 3px;
+}
+
+.admin-actions-cell {
+  display: flex;
+  gap: 14px;
+}
+
+.report-editor-content {
+  font-family: "SFMono-Regular", Consolas, monospace;
+  min-height: 620px;
+}
+
+.report-history {
+  display: grid;
+  gap: 14px;
+}
+
+.report-history-card {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+}
+
+.report-history-card h2 {
+  margin: 0 0 6px;
+}
+
+.empty-state {
+  text-align: center;
+}
+
 .error {
   background: #fff4ed;
   border: 1px solid #f3b58b;
@@ -288,6 +422,72 @@ select {
   color: var(--warn);
   margin-top: 16px;
   padding: 12px;
+}
+
+.generation-progress {
+  background: #f5fbf9;
+  border: 1px solid #cfe5df;
+  border-radius: 8px;
+  margin-top: 24px;
+  padding: 18px;
+}
+
+.generation-progress-head {
+  align-items: center;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+}
+
+.generation-progress-head span {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.generation-progress-track {
+  background: #dfe9e6;
+  border-radius: 999px;
+  height: 8px;
+  margin-top: 14px;
+  overflow: hidden;
+}
+
+.generation-progress-track span {
+  background: var(--accent);
+  display: block;
+  height: 100%;
+  transition: width 240ms ease;
+}
+
+.generation-progress-steps {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  margin-top: 16px;
+}
+
+.generation-progress-steps div {
+  color: var(--muted);
+  display: grid;
+  font-size: 12px;
+  gap: 6px;
+  justify-items: center;
+  text-align: center;
+}
+
+.generation-progress-steps div > span {
+  background: #c8d1ce;
+  border-radius: 50%;
+  height: 8px;
+  width: 8px;
+}
+
+.generation-progress-steps div.complete {
+  color: var(--ink);
+}
+
+.generation-progress-steps div.complete > span {
+  background: var(--accent);
 }
 
 .report-reader {
@@ -394,6 +594,24 @@ select {
   width: 28px;
 }
 
+.action-detail {
+  align-items: start;
+  color: #343532;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 8px minmax(0, 1fr);
+  line-height: 1.8;
+  margin: 8px 18px 0 58px;
+}
+
+.action-detail-dot {
+  background: var(--accent);
+  border-radius: 50%;
+  height: 6px;
+  margin-top: 11px;
+  width: 6px;
+}
+
 .metrics {
   display: grid;
   gap: 14px;
@@ -431,5 +649,9 @@ select {
   .action-card {
     grid-template-columns: 30px minmax(0, 1fr);
     padding: 12px;
+  }
+
+  .generation-progress-steps {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
