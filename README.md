@@ -5,26 +5,26 @@
 ```text
 frontend/  React + TypeScript + Vite
 backend/   Python + FastAPI
-data/      本地 JSON 数据
+postgres  PostgreSQL 数据库
 ```
 
-本地数据按未来数据库表结构拆分保存：
+生产环境使用 PostgreSQL 保存数据，并按业务对象拆分表：
 
 ```text
-data/users.json                  用户账号
-data/assessment_responses.json   问卷单值答案
-data/assessment_scores.json      能力与兴趣量表分数
-data/assessment_choices.json     问卷多选答案
-data/career_profiles.json        结构化人生画像
-data/reports.json                当前报告
-data/report_versions.json        报告历史版本
-data/generation_jobs.json        生成任务
-data/report_feedback.json        报告反馈
-data/admin_audit_logs.json        管理员操作记录
+users                  用户账号
+assessment_responses   问卷单值答案
+assessment_scores      能力与兴趣量表分数
+assessment_choices     问卷多选答案
+career_profiles        结构化人生画像
+reports                当前报告
+report_versions        报告历史版本
+generation_jobs        生成任务
+report_feedback        报告反馈
+admin_audit_logs        管理员操作记录
 ```
 
-各文件通过 UUID 关联，不使用用户名建立关系。报告的输入快照不重复写入
-`reports.json`，读取报告时会根据 `responseId` 和 `profileId` 重新组装。
+各表通过 UUID 关联，不使用用户名建立关系。画像和报告正文等复杂结构使用
+`JSONB` 保存，核心关联字段单独建列，方便后续查询和迁移。
 
 系统包含学生账号和管理员账号：
 
@@ -95,6 +95,10 @@ AUTH_TOKEN_HOURS=72
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD=admin12345
 ADMIN_DISPLAY_NAME=系统管理员
+POSTGRES_DB=siyuan_compass
+POSTGRES_USER=siyuan
+POSTGRES_PASSWORD=please-change-postgres-password
+DATABASE_URL=postgresql://siyuan:please-change-postgres-password@localhost:5432/siyuan_compass
 ```
 
 前端复制 `frontend/.env.example` 为 `frontend/.env`：
@@ -117,8 +121,8 @@ VITE_API_BASE_URL=http://localhost:8000/api
 
 ## Docker 部署
 
-推荐部署到安装了 Docker Engine 和 Docker Compose 的 Linux 服务器。当前使用
-JSON 文件存储，后端必须保持单 worker；项目 Dockerfile 已固定为单 worker。
+推荐部署到安装了 Docker Engine 和 Docker Compose 的 Linux 服务器。Compose 会启动
+PostgreSQL、FastAPI 后端和 Nginx 前端。后端保持单 worker，避免报告生成任务和数据库初始化重复执行。
 
 1. 将代码上传或克隆到服务器。
 2. 创建生产环境变量：
@@ -134,6 +138,7 @@ openssl rand -hex 32
 DEEPSEEK_API_KEY
 FRONTEND_ORIGINS
 ADMIN_PASSWORD
+POSTGRES_PASSWORD
 ```
 
 3. 构建并启动：
@@ -153,21 +158,21 @@ curl http://服务器IP/health
 返回 `{"status":"ok"}` 后即可通过 `http://服务器IP` 访问。前端容器会把
 `/api` 请求转发到后端，后端端口不会直接暴露到公网。
 
-数据持久化在服务器项目目录的 `data/` 中。升级应用时不要删除该目录：
+数据持久化在 Docker volume `postgres-data` 中。升级应用时不要删除该 volume：
 
 ```bash
 git pull
 docker compose up -d --build
 ```
 
-备份可以直接打包数据目录：
+备份数据库：
 
 ```bash
-tar -czf siyuan-data-$(date +%F).tar.gz data/
+docker compose exec postgres pg_dump -U siyuan siyuan_compass > siyuan-backup-$(date +%F).sql
 ```
 
 生产环境应使用域名和 HTTPS。可以在该 Compose 服务前配置服务器 Nginx、
 Caddy 或云厂商负载均衡，将 HTTPS 请求转发到服务器的 `HTTP_PORT`。
 
-注意：管理员账号只在首次启动且账号不存在时创建。`users.json` 已存在管理员后，
+注意：管理员账号只在首次启动且账号不存在时创建。数据库里已存在管理员后，
 仅修改 `.env` 中的 `ADMIN_PASSWORD` 不会自动修改已有密码。

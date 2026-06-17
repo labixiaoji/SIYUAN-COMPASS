@@ -1,32 +1,18 @@
 from __future__ import annotations
 
-import json
-from functools import wraps
-from pathlib import Path
-from threading import RLock
+from contextlib import contextmanager
 from typing import Any, Literal
 from uuid import uuid4
 
+import psycopg
+from psycopg.rows import dict_row
+from psycopg.types.json import Jsonb
+
+from app.core.config import get_settings
 from app.schemas.assessment import AssessmentResponse
 from app.schemas.generation_job import GenerationJobStatus
 from app.schemas.profile import CareerProfile
 from app.schemas.report import CareerBlueprintReport, ReportFeedback
-
-ROOT_DIR = Path(__file__).resolve().parents[3]
-DATA_DIR = ROOT_DIR / "data"
-
-TABLE_FILES = {
-    "users": DATA_DIR / "users.json",
-    "assessment_responses": DATA_DIR / "assessment_responses.json",
-    "assessment_scores": DATA_DIR / "assessment_scores.json",
-    "assessment_choices": DATA_DIR / "assessment_choices.json",
-    "career_profiles": DATA_DIR / "career_profiles.json",
-    "reports": DATA_DIR / "reports.json",
-    "report_versions": DATA_DIR / "report_versions.json",
-    "generation_jobs": DATA_DIR / "generation_jobs.json",
-    "report_feedback": DATA_DIR / "report_feedback.json",
-    "admin_audit_logs": DATA_DIR / "admin_audit_logs.json",
-}
 
 ASSESSMENT_LIST_FIELDS = (
     "educationPathReasons",
@@ -37,73 +23,143 @@ ASSESSMENT_LIST_FIELDS = (
     "careerConfusions",
 )
 
-_LOCK = RLock()
+CREATE_TABLES_SQL = """
+CREATE TABLE IF NOT EXISTS users (
+    id TEXT PRIMARY KEY,
+    username TEXT UNIQUE,
+    display_name TEXT,
+    password_hash TEXT,
+    role TEXT NOT NULL DEFAULT 'student',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS assessment_responses (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    grade TEXT NOT NULL,
+    college_major TEXT NOT NULL,
+    submitted_at TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    data JSONB NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS assessment_scores (
+    assessment_id TEXT PRIMARY KEY REFERENCES assessment_responses(id) ON DELETE CASCADE,
+    ability_scores JSONB NOT NULL,
+    interest_scores JSONB NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS assessment_choices (
+    id TEXT PRIMARY KEY,
+    assessment_id TEXT NOT NULL REFERENCES assessment_responses(id) ON DELETE CASCADE,
+    question_code TEXT NOT NULL,
+    option_value TEXT NOT NULL,
+    sort_order INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS career_profiles (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    response_id TEXT NOT NULL REFERENCES assessment_responses(id) ON DELETE CASCADE,
+    model_name TEXT NOT NULL,
+    prompt_version TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    data JSONB NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS reports (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    response_id TEXT NOT NULL REFERENCES assessment_responses(id) ON DELETE CASCADE,
+    profile_id TEXT NOT NULL REFERENCES career_profiles(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    generation_status TEXT NOT NULL,
+    quality_status TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    edited_at TEXT,
+    edited_by TEXT,
+    data JSONB NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS report_versions (
+    id TEXT PRIMARY KEY,
+    report_id TEXT NOT NULL REFERENCES reports(id) ON DELETE CASCADE,
+    version_number INTEGER NOT NULL,
+    title TEXT NOT NULL,
+    content TEXT NOT NULL,
+    word_count INTEGER NOT NULL,
+    quality_status TEXT NOT NULL,
+    source TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    created_by TEXT
+);
+
+CREATE TABLE IF NOT EXISTS generation_jobs (
+    job_id TEXT PRIMARY KEY,
+    user_id TEXT,
+    status TEXT NOT NULL,
+    stage TEXT NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    data JSONB NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS report_feedback (
+    id TEXT PRIMARY KEY,
+    report_id TEXT NOT NULL REFERENCES reports(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    understanding_score INTEGER NOT NULL,
+    insight_score INTEGER NOT NULL,
+    action_score INTEGER NOT NULL,
+    recommend_score INTEGER NOT NULL,
+    created_at TEXT NOT NULL,
+    data JSONB NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS admin_audit_logs (
+    id TEXT PRIMARY KEY,
+    admin_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    action TEXT NOT NULL,
+    target_type TEXT NOT NULL,
+    target_id TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    details JSONB NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_assessment_responses_user_id
+    ON assessment_responses(user_id);
+CREATE INDEX IF NOT EXISTS idx_assessment_choices_assessment_id
+    ON assessment_choices(assessment_id);
+CREATE INDEX IF NOT EXISTS idx_career_profiles_response_id
+    ON career_profiles(response_id);
+CREATE INDEX IF NOT EXISTS idx_reports_user_id_created_at
+    ON reports(user_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_reports_created_at
+    ON reports(created_at);
+CREATE INDEX IF NOT EXISTS idx_report_feedback_report_id
+    ON report_feedback(report_id);
+"""
 
 
-def _synchronized(function):
-    @wraps(function)
-    def wrapper(*args, **kwargs):
-        with _LOCK:
-            return function(*args, **kwargs)
-
-    return wrapper
+@contextmanager
+def _connect():
+    connection = psycopg.connect(get_settings().database_url, row_factory=dict_row)
+    try:
+        yield connection
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        connection.close()
 
 
 def ensure_storage() -> None:
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    for path in TABLE_FILES.values():
-        if not path.exists():
-            _write_path(path, [])
+    with _connect() as connection:
+        connection.execute(CREATE_TABLES_SQL)
 
 
-def _write_path(path: Path, records: list[dict[str, Any]]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary_path = path.with_suffix(f"{path.suffix}.tmp")
-    temporary_path.write_text(
-        json.dumps(records, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
-    temporary_path.replace(path)
-
-
-def _read_table(table: str) -> list[dict[str, Any]]:
-    with _LOCK:
-        ensure_storage()
-        path = TABLE_FILES[table]
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError as error:
-            raise RuntimeError(f"数据文件格式错误：{path.name}") from error
-        if not isinstance(data, list):
-            raise RuntimeError(f"数据文件必须是 JSON 数组：{path.name}")
-        return data
-
-
-def _write_table(table: str, records: list[dict[str, Any]]) -> None:
-    with _LOCK:
-        ensure_storage()
-        _write_path(TABLE_FILES[table], records)
-
-
-def _upsert(items: list[dict[str, Any]], record: dict[str, Any], key: str = "id") -> None:
-    index = next(
-        (idx for idx, item in enumerate(items) if item.get(key) == record.get(key)),
-        -1,
-    )
-    if index >= 0:
-        items[index] = record
-    else:
-        items.append(record)
-
-
-def _find_record(table: str, record_id: str, key: str = "id") -> dict[str, Any] | None:
-    return next(
-        (record for record in _read_table(table) if record.get(key) == record_id),
-        None,
-    )
-
-
-@_synchronized
 def get_or_create_user(user_id: str | None = None) -> dict[str, Any]:
     from app.services.report_generator import now_iso
 
@@ -112,25 +168,78 @@ def get_or_create_user(user_id: str | None = None) -> dict[str, Any]:
         return existing
 
     now = now_iso()
-    user = {"id": user_id or str(uuid4()), "createdAt": now, "updatedAt": now}
-    users = _read_table("users")
-    users.append(user)
-    _write_table("users", users)
+    user = {
+        "id": user_id or str(uuid4()),
+        "username": None,
+        "displayName": "匿名用户",
+        "passwordHash": "",
+        "role": "student",
+        "createdAt": now,
+        "updatedAt": now,
+    }
+    with _connect() as connection:
+        _upsert_user(connection, user)
     return user
 
 
+def _user_from_row(row: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not row:
+        return None
+    return {
+        "id": row["id"],
+        "username": row["username"],
+        "displayName": row["display_name"],
+        "passwordHash": row["password_hash"],
+        "role": row["role"],
+        "createdAt": row["created_at"],
+        "updatedAt": row["updated_at"],
+    }
+
+
 def find_user(user_id: str) -> dict[str, Any] | None:
-    return _find_record("users", user_id)
+    with _connect() as connection:
+        row = connection.execute(
+            "SELECT * FROM users WHERE id = %s",
+            (user_id,),
+        ).fetchone()
+    return _user_from_row(row)
 
 
 def find_user_by_username(username: str) -> dict[str, Any] | None:
-    return next(
-        (user for user in _read_table("users") if user.get("username") == username),
-        None,
+    with _connect() as connection:
+        row = connection.execute(
+            "SELECT * FROM users WHERE username = %s",
+            (username,),
+        ).fetchone()
+    return _user_from_row(row)
+
+
+def _upsert_user(connection, user: dict[str, Any]) -> None:
+    connection.execute(
+        """
+        INSERT INTO users (
+            id, username, display_name, password_hash, role, created_at, updated_at
+        )
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        ON CONFLICT (id) DO UPDATE SET
+            username = EXCLUDED.username,
+            display_name = EXCLUDED.display_name,
+            password_hash = EXCLUDED.password_hash,
+            role = EXCLUDED.role,
+            updated_at = EXCLUDED.updated_at
+        """,
+        (
+            user["id"],
+            user.get("username"),
+            user.get("displayName"),
+            user.get("passwordHash"),
+            user.get("role", "student"),
+            user["createdAt"],
+            user["updatedAt"],
+        ),
     )
 
 
-@_synchronized
 def create_account(
     *,
     username: str,
@@ -150,13 +259,11 @@ def create_account(
         "createdAt": now,
         "updatedAt": now,
     }
-    users = _read_table("users")
-    users.append(user)
-    _write_table("users", users)
+    with _connect() as connection:
+        _upsert_user(connection, user)
     return user
 
 
-@_synchronized
 def ensure_admin_account() -> None:
     from app.core.config import get_settings
     from app.services.auth import hash_password, normalize_username
@@ -173,48 +280,101 @@ def ensure_admin_account() -> None:
     )
 
 
-@_synchronized
-def save_assessment_progress(response: AssessmentResponse, profile: CareerProfile) -> None:
-    response_record = response.model_dump(mode="json")
-    score_record = {
-        "id": response.id,
-        "assessmentId": response.id,
-        "abilityScores": response_record.pop("abilityScores"),
-        "interestScores": response_record.pop("interestScores"),
-    }
-
-    choice_records = []
+def _response_storage_record(response: AssessmentResponse) -> dict[str, Any]:
+    record = response.model_dump(mode="json")
+    record.pop("abilityScores")
+    record.pop("interestScores")
     for question_code in ASSESSMENT_LIST_FIELDS:
-        values = response_record.pop(question_code)
-        choice_records.extend(
-            {
-                "id": f"{response.id}:{question_code}:{sort_order}",
-                "assessmentId": response.id,
-                "questionCode": question_code,
-                "optionValue": value,
-                "sortOrder": sort_order,
-            }
-            for sort_order, value in enumerate(values)
+        record.pop(question_code)
+    return record
+
+
+def save_assessment_progress(response: AssessmentResponse, profile: CareerProfile) -> None:
+    response_record = _response_storage_record(response)
+    response_payload = response.model_dump(mode="json")
+    profile_record = profile.model_dump(mode="json")
+
+    with _connect() as connection:
+        connection.execute(
+            """
+            INSERT INTO assessment_responses (
+                id, user_id, grade, college_major, submitted_at, created_at, data
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (id) DO UPDATE SET
+                grade = EXCLUDED.grade,
+                college_major = EXCLUDED.college_major,
+                submitted_at = EXCLUDED.submitted_at,
+                data = EXCLUDED.data
+            """,
+            (
+                response.id,
+                response.userId,
+                response.grade,
+                response.collegeMajor,
+                response.submittedAt,
+                response.createdAt,
+                Jsonb(response_record),
+            ),
         )
-
-    responses = _read_table("assessment_responses")
-    scores = _read_table("assessment_scores")
-    choices = [
-        item
-        for item in _read_table("assessment_choices")
-        if item.get("assessmentId") != response.id
-    ]
-    profiles = _read_table("career_profiles")
-
-    _upsert(responses, response_record)
-    _upsert(scores, score_record)
-    choices.extend(choice_records)
-    _upsert(profiles, profile.model_dump(mode="json"))
-
-    _write_table("assessment_responses", responses)
-    _write_table("assessment_scores", scores)
-    _write_table("assessment_choices", choices)
-    _write_table("career_profiles", profiles)
+        connection.execute(
+            """
+            INSERT INTO assessment_scores (
+                assessment_id, ability_scores, interest_scores
+            )
+            VALUES (%s, %s, %s)
+            ON CONFLICT (assessment_id) DO UPDATE SET
+                ability_scores = EXCLUDED.ability_scores,
+                interest_scores = EXCLUDED.interest_scores
+            """,
+            (
+                response.id,
+                Jsonb(response_payload["abilityScores"]),
+                Jsonb(response_payload["interestScores"]),
+            ),
+        )
+        connection.execute(
+            "DELETE FROM assessment_choices WHERE assessment_id = %s",
+            (response.id,),
+        )
+        for question_code in ASSESSMENT_LIST_FIELDS:
+            for sort_order, value in enumerate(response_payload[question_code]):
+                connection.execute(
+                    """
+                    INSERT INTO assessment_choices (
+                        id, assessment_id, question_code, option_value, sort_order
+                    )
+                    VALUES (%s, %s, %s, %s, %s)
+                    """,
+                    (
+                        f"{response.id}:{question_code}:{sort_order}",
+                        response.id,
+                        question_code,
+                        value,
+                        sort_order,
+                    ),
+                )
+        connection.execute(
+            """
+            INSERT INTO career_profiles (
+                id, user_id, response_id, model_name, prompt_version, created_at, data
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (id) DO UPDATE SET
+                model_name = EXCLUDED.model_name,
+                prompt_version = EXCLUDED.prompt_version,
+                data = EXCLUDED.data
+            """,
+            (
+                profile.id,
+                profile.userId,
+                profile.responseId,
+                profile.modelName,
+                profile.promptVersion,
+                profile.createdAt,
+                Jsonb(profile_record),
+            ),
+        )
 
 
 def _report_storage_record(report: CareerBlueprintReport) -> dict[str, Any]:
@@ -223,41 +383,81 @@ def _report_storage_record(report: CareerBlueprintReport) -> dict[str, Any]:
     return record
 
 
-def _save_report_version(report: CareerBlueprintReport, source: str) -> None:
-    versions = _read_table("report_versions")
-    report_versions = [
-        version for version in versions if version.get("reportId") == report.id
-    ]
-    versions.append(
-        {
-            "id": str(uuid4()),
-            "reportId": report.id,
-            "versionNumber": len(report_versions) + 1,
-            "title": report.title,
-            "content": report.content,
-            "wordCount": report.wordCount,
-            "qualityStatus": report.qualityStatus,
-            "source": source,
-            "createdAt": report.updatedAt,
-            "createdBy": report.editedBy,
-        }
+def _save_report_version(connection, report: CareerBlueprintReport, source: str) -> None:
+    row = connection.execute(
+        "SELECT COALESCE(MAX(version_number), 0) + 1 AS next_version FROM report_versions WHERE report_id = %s",
+        (report.id,),
+    ).fetchone()
+    connection.execute(
+        """
+        INSERT INTO report_versions (
+            id, report_id, version_number, title, content, word_count,
+            quality_status, source, created_at, created_by
+        )
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """,
+        (
+            str(uuid4()),
+            report.id,
+            row["next_version"],
+            report.title,
+            report.content,
+            report.wordCount,
+            report.qualityStatus,
+            source,
+            report.updatedAt,
+            report.editedBy,
+        ),
     )
-    _write_table("report_versions", versions)
 
 
-@_synchronized
 def save_report(report: CareerBlueprintReport) -> None:
-    reports = _read_table("reports")
-    _upsert(reports, _report_storage_record(report))
-    _write_table("reports", reports)
-    _save_report_version(report, "ai_generated")
+    record = _report_storage_record(report)
+    with _connect() as connection:
+        connection.execute(
+            """
+            INSERT INTO reports (
+                id, user_id, response_id, profile_id, title, generation_status,
+                quality_status, created_at, updated_at, edited_at, edited_by, data
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (id) DO UPDATE SET
+                title = EXCLUDED.title,
+                generation_status = EXCLUDED.generation_status,
+                quality_status = EXCLUDED.quality_status,
+                updated_at = EXCLUDED.updated_at,
+                edited_at = EXCLUDED.edited_at,
+                edited_by = EXCLUDED.edited_by,
+                data = EXCLUDED.data
+            """,
+            (
+                report.id,
+                report.userId,
+                report.responseId,
+                report.profileId,
+                report.title,
+                report.generationStatus,
+                report.qualityStatus,
+                report.createdAt,
+                report.updatedAt,
+                report.editedAt,
+                report.editedBy,
+                Jsonb(record),
+            ),
+        )
+        _save_report_version(connection, report, "ai_generated")
 
 
 def find_report(report_id: str) -> CareerBlueprintReport | None:
-    record = _find_record("reports", report_id)
-    if not record:
+    with _connect() as connection:
+        row = connection.execute(
+            "SELECT data FROM reports WHERE id = %s",
+            (report_id,),
+        ).fetchone()
+    if not row:
         return None
 
+    record = dict(row["data"])
     response = find_response(record["responseId"])
     profile = find_profile(record["profileId"])
     record["inputSnapshot"] = {
@@ -268,177 +468,295 @@ def find_report(report_id: str) -> CareerBlueprintReport | None:
 
 
 def find_response(response_id: str) -> AssessmentResponse | None:
-    response = _find_record("assessment_responses", response_id)
-    score = _find_record("assessment_scores", response_id, key="assessmentId")
-    if not response or not score:
+    with _connect() as connection:
+        response_row = connection.execute(
+            "SELECT data FROM assessment_responses WHERE id = %s",
+            (response_id,),
+        ).fetchone()
+        score_row = connection.execute(
+            "SELECT ability_scores, interest_scores FROM assessment_scores WHERE assessment_id = %s",
+            (response_id,),
+        ).fetchone()
+        choice_rows = connection.execute(
+            """
+            SELECT question_code, option_value, sort_order
+            FROM assessment_choices
+            WHERE assessment_id = %s
+            ORDER BY question_code, sort_order
+            """,
+            (response_id,),
+        ).fetchall()
+
+    if not response_row or not score_row:
         return None
 
-    choices = [
-        choice
-        for choice in _read_table("assessment_choices")
-        if choice.get("assessmentId") == response_id
-    ]
-    payload = dict(response)
-    payload["abilityScores"] = score["abilityScores"]
-    payload["interestScores"] = score["interestScores"]
+    payload = dict(response_row["data"])
+    payload["abilityScores"] = score_row["ability_scores"]
+    payload["interestScores"] = score_row["interest_scores"]
     for question_code in ASSESSMENT_LIST_FIELDS:
         payload[question_code] = [
-            item["optionValue"]
+            item["option_value"]
             for item in sorted(
                 (
                     choice
-                    for choice in choices
-                    if choice.get("questionCode") == question_code
+                    for choice in choice_rows
+                    if choice["question_code"] == question_code
                 ),
-                key=lambda item: item.get("sortOrder", 0),
+                key=lambda item: item["sort_order"],
             )
         ]
     return AssessmentResponse.model_validate(payload)
 
 
 def find_profile(profile_id: str) -> CareerProfile | None:
-    profile = _find_record("career_profiles", profile_id)
-    return CareerProfile.model_validate(profile) if profile else None
+    with _connect() as connection:
+        row = connection.execute(
+            "SELECT data FROM career_profiles WHERE id = %s",
+            (profile_id,),
+        ).fetchone()
+    return CareerProfile.model_validate(row["data"]) if row else None
 
 
-@_synchronized
 def update_profile(profile: CareerProfile) -> None:
-    profiles = _read_table("career_profiles")
-    if not any(item.get("id") == profile.id for item in profiles):
-        return
-    _upsert(profiles, profile.model_dump(mode="json"))
-    _write_table("career_profiles", profiles)
-
-
-@_synchronized
-def update_report(report: CareerBlueprintReport) -> None:
-    reports = _read_table("reports")
-    previous = next((item for item in reports if item.get("id") == report.id), None)
-    if not previous:
-        return
-
-    _upsert(reports, _report_storage_record(report))
-    _write_table("reports", reports)
-    source = "admin_edit" if report.editedBy else "ai_regenerated"
-    _save_report_version(report, source)
-
-    if report.editedBy:
-        audit_logs = _read_table("admin_audit_logs")
-        audit_logs.append(
-            {
-                "id": str(uuid4()),
-                "adminId": report.editedBy,
-                "action": "report.update",
-                "targetType": "report",
-                "targetId": report.id,
-                "createdAt": report.updatedAt,
-                "details": {
-                    "previousTitle": previous.get("title"),
-                    "newTitle": report.title,
-                },
-            }
+    with _connect() as connection:
+        connection.execute(
+            """
+            UPDATE career_profiles
+            SET model_name = %s, prompt_version = %s, data = %s
+            WHERE id = %s
+            """,
+            (
+                profile.modelName,
+                profile.promptVersion,
+                Jsonb(profile.model_dump(mode="json")),
+                profile.id,
+            ),
         )
-        _write_table("admin_audit_logs", audit_logs)
 
 
-@_synchronized
+def update_report(report: CareerBlueprintReport) -> None:
+    record = _report_storage_record(report)
+    with _connect() as connection:
+        previous = connection.execute(
+            "SELECT title FROM reports WHERE id = %s",
+            (report.id,),
+        ).fetchone()
+        if not previous:
+            return
+
+        connection.execute(
+            """
+            UPDATE reports
+            SET title = %s,
+                generation_status = %s,
+                quality_status = %s,
+                updated_at = %s,
+                edited_at = %s,
+                edited_by = %s,
+                data = %s
+            WHERE id = %s
+            """,
+            (
+                report.title,
+                report.generationStatus,
+                report.qualityStatus,
+                report.updatedAt,
+                report.editedAt,
+                report.editedBy,
+                Jsonb(record),
+                report.id,
+            ),
+        )
+        source = "admin_edit" if report.editedBy else "ai_regenerated"
+        _save_report_version(connection, report, source)
+
+        if report.editedBy:
+            connection.execute(
+                """
+                INSERT INTO admin_audit_logs (
+                    id, admin_id, action, target_type, target_id, created_at, details
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    str(uuid4()),
+                    report.editedBy,
+                    "report.update",
+                    "report",
+                    report.id,
+                    report.updatedAt,
+                    Jsonb(
+                        {
+                            "previousTitle": previous["title"],
+                            "newTitle": report.title,
+                        }
+                    ),
+                ),
+            )
+
+
 def save_feedback(feedback: ReportFeedback) -> None:
-    feedback_records = _read_table("report_feedback")
-    feedback_records.append(feedback.model_dump(mode="json"))
-    _write_table("report_feedback", feedback_records)
+    record = feedback.model_dump(mode="json")
+    with _connect() as connection:
+        connection.execute(
+            """
+            INSERT INTO report_feedback (
+                id, report_id, user_id, understanding_score, insight_score,
+                action_score, recommend_score, created_at, data
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """,
+            (
+                feedback.id,
+                feedback.reportId,
+                feedback.userId,
+                feedback.understandingScore,
+                feedback.insightScore,
+                feedback.actionScore,
+                feedback.recommendScore,
+                feedback.createdAt,
+                Jsonb(record),
+            ),
+        )
 
 
-@_synchronized
 def save_generation_job(job: GenerationJobStatus) -> None:
-    jobs = _read_table("generation_jobs")
-    _upsert(jobs, job.model_dump(mode="json"), key="jobId")
-    if len(jobs) > 100:
-        jobs = jobs[-100:]
-    _write_table("generation_jobs", jobs)
+    record = job.model_dump(mode="json")
+    with _connect() as connection:
+        connection.execute(
+            """
+            INSERT INTO generation_jobs (job_id, user_id, status, stage, data)
+            VALUES (%s, %s, %s, %s, %s)
+            ON CONFLICT (job_id) DO UPDATE SET
+                user_id = EXCLUDED.user_id,
+                status = EXCLUDED.status,
+                stage = EXCLUDED.stage,
+                data = EXCLUDED.data,
+                updated_at = now()
+            """,
+            (
+                job.jobId,
+                job.userId,
+                job.status,
+                job.stage,
+                Jsonb(record),
+            ),
+        )
 
 
 def find_generation_job(job_id: str) -> GenerationJobStatus | None:
-    job = _find_record("generation_jobs", job_id, key="jobId")
-    return GenerationJobStatus.model_validate(job) if job else None
+    with _connect() as connection:
+        row = connection.execute(
+            "SELECT data FROM generation_jobs WHERE job_id = %s",
+            (job_id,),
+        ).fetchone()
+    return GenerationJobStatus.model_validate(row["data"]) if row else None
 
 
 def get_metrics() -> dict[str, Any]:
-    responses = _read_table("assessment_responses")
-    reports = _read_table("reports")
-    scores = _read_table("report_feedback")
-
-    def average(key: str) -> float:
-        if not scores:
-            return 0
-        return round(sum(item[key] for item in scores) / len(scores), 1)
+    with _connect() as connection:
+        metrics = connection.execute(
+            """
+            SELECT
+                (SELECT COUNT(*) FROM assessment_responses) AS assessment_count,
+                (SELECT COUNT(*) FROM reports WHERE generation_status = 'success') AS report_success_count,
+                (SELECT COUNT(*) FROM reports WHERE generation_status = 'failed') AS report_failed_count,
+                (SELECT COUNT(*) FROM report_feedback) AS feedback_count,
+                COALESCE(ROUND(AVG(understanding_score)::numeric, 1), 0) AS average_understanding_score,
+                COALESCE(ROUND(AVG(insight_score)::numeric, 1), 0) AS average_insight_score,
+                COALESCE(ROUND(AVG(action_score)::numeric, 1), 0) AS average_action_score,
+                COALESCE(ROUND(AVG(recommend_score)::numeric, 1), 0) AS average_recommend_score
+            FROM report_feedback
+            """
+        ).fetchone()
+        low_score_rows = connection.execute(
+            """
+            SELECT report_id
+            FROM report_feedback
+            WHERE LEAST(
+                understanding_score,
+                insight_score,
+                action_score,
+                recommend_score
+            ) <= 2
+            """
+        ).fetchall()
 
     return {
-        "assessmentCount": len(responses),
-        "reportSuccessCount": len(
-            [report for report in reports if report["generationStatus"] == "success"]
-        ),
-        "reportFailedCount": len(
-            [report for report in reports if report["generationStatus"] == "failed"]
-        ),
-        "feedbackCount": len(scores),
-        "averageUnderstandingScore": average("understandingScore"),
-        "averageInsightScore": average("insightScore"),
-        "averageActionScore": average("actionScore"),
-        "averageRecommendScore": average("recommendScore"),
-        "lowScoreReports": [
-            item["reportId"]
-            for item in scores
-            if min(
-                item["understandingScore"],
-                item["insightScore"],
-                item["actionScore"],
-                item["recommendScore"],
-            )
-            <= 2
-        ],
+        "assessmentCount": metrics["assessment_count"],
+        "reportSuccessCount": metrics["report_success_count"],
+        "reportFailedCount": metrics["report_failed_count"],
+        "feedbackCount": metrics["feedback_count"],
+        "averageUnderstandingScore": float(metrics["average_understanding_score"]),
+        "averageInsightScore": float(metrics["average_insight_score"]),
+        "averageActionScore": float(metrics["average_action_score"]),
+        "averageRecommendScore": float(metrics["average_recommend_score"]),
+        "lowScoreReports": [item["report_id"] for item in low_score_rows],
     }
 
 
 def get_recent_reports(limit: int = 8) -> list[dict[str, Any]]:
-    return list(reversed(_read_table("reports")[-limit:]))
+    with _connect() as connection:
+        rows = connection.execute(
+            """
+            SELECT data
+            FROM reports
+            ORDER BY created_at DESC
+            LIMIT %s
+            """,
+            (limit,),
+        ).fetchall()
+    return [dict(row["data"]) for row in rows]
 
 
 def get_user_reports(user_id: str) -> list[dict[str, Any]]:
-    return list(
-        reversed(
-            [
-                report
-                for report in _read_table("reports")
-                if report["userId"] == user_id
-            ]
-        )
-    )
+    with _connect() as connection:
+        rows = connection.execute(
+            """
+            SELECT data
+            FROM reports
+            WHERE user_id = %s
+            ORDER BY created_at DESC
+            """,
+            (user_id,),
+        ).fetchall()
+    return [dict(row["data"]) for row in rows]
 
 
 def get_admin_records() -> list[dict[str, Any]]:
-    users = {user["id"]: user for user in _read_table("users")}
-    responses = {
-        response["id"]: response for response in _read_table("assessment_responses")
-    }
+    with _connect() as connection:
+        rows = connection.execute(
+            """
+            SELECT
+                reports.data AS report,
+                users.id AS user_id,
+                users.username,
+                users.display_name,
+                assessment_responses.grade,
+                assessment_responses.college_major,
+                assessment_responses.submitted_at
+            FROM reports
+            LEFT JOIN users ON users.id = reports.user_id
+            LEFT JOIN assessment_responses ON assessment_responses.id = reports.response_id
+            ORDER BY reports.created_at DESC
+            """
+        ).fetchall()
+
     records = []
-    for report in reversed(_read_table("reports")):
-        user = users.get(report["userId"], {})
-        response = responses.get(report["responseId"], {})
+    for row in rows:
+        report = dict(row["report"])
         records.append(
             {
                 "report": report,
                 "student": {
-                    "id": report["userId"],
-                    "username": user.get("username") or "未知用户",
-                    "displayName": user.get("displayName") or "未知用户",
+                    "id": row["user_id"],
+                    "username": row["username"] or "未知用户",
+                    "displayName": row["display_name"] or "未知用户",
                 },
                 "assessment": {
-                    "grade": response.get("grade", ""),
-                    "collegeMajor": response.get("collegeMajor", ""),
-                    "submittedAt": response.get(
-                        "submittedAt",
-                        report["createdAt"],
-                    ),
+                    "grade": row["grade"] or "",
+                    "collegeMajor": row["college_major"] or "",
+                    "submittedAt": row["submitted_at"] or report["createdAt"],
                 },
             }
         )

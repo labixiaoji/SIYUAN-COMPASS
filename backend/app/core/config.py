@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     admin_username: str = "admin"
     admin_password: str = "admin12345"
     admin_display_name: str = "系统管理员"
+    database_url: str = "postgresql://siyuan:siyuan_password@localhost:5432/siyuan_compass"
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
