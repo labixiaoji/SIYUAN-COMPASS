@@ -65,6 +65,7 @@ def _parse_profile_json(content: str) -> ProfileAnalysisResult:
             analysis.educationPathAssessments,
             analysis.planA,
             analysis.planB,
+            analysis.planC,
         ]
     )
     if not has_core_content:
@@ -86,6 +87,8 @@ def _collect_quality_warnings(analysis: ProfileAnalysisResult) -> list[str]:
         warnings.append("缺少 Plan A")
     if not analysis.planB:
         warnings.append("缺少 Plan B")
+    if not analysis.planC:
+        warnings.append("缺少 Plan C")
     if not analysis.reportEvidenceMap:
         warnings.append("缺少报告证据映射")
     return warnings
@@ -127,7 +130,7 @@ async def analyze_career_profile(
 
         try:
             if progress_callback:
-                progress_callback("profile_validating", 45, "画像已返回，正在校验证据、矛盾和双路径结构。")
+                progress_callback("profile_validating", 45, "画像已返回，正在校验证据、矛盾和三路径结构。")
             analysis = _parse_profile_json(result["content"])
             break
         except ProfileAnalysisError as error:

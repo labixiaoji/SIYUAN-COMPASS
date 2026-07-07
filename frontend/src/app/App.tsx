@@ -1,6 +1,7 @@
 import { Link, NavLink, Route, Routes } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { ProtectedRoute } from "../auth/ProtectedRoute";
+import { AdminAssessmentPage } from "../pages/AdminAssessmentPage";
 import { AdminPage } from "../pages/AdminPage";
 import { AdminReportEditPage } from "../pages/AdminReportEditPage";
 import { AssessmentPage } from "../pages/AssessmentPage";
@@ -43,6 +44,7 @@ export function App() {
         <Route path="/reports/:reportId" element={<ProtectedRoute><ReportPage /></ProtectedRoute>} />
         <Route path="/reports/:reportId/feedback" element={<ProtectedRoute role="student"><FeedbackPage /></ProtectedRoute>} />
         <Route path="/admin" element={<ProtectedRoute role="admin"><AdminPage /></ProtectedRoute>} />
+        <Route path="/admin/assessments/:responseId" element={<ProtectedRoute role="admin"><AdminAssessmentPage /></ProtectedRoute>} />
         <Route path="/admin/reports/:reportId/edit" element={<ProtectedRoute role="admin"><AdminReportEditPage /></ProtectedRoute>} />
       </Routes>
     </>

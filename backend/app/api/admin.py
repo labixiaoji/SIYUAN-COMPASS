@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from app.schemas.report import AdminReportUpdate
 from app.services.auth import require_admin
 from app.services.report_quality_check import check_report_quality, count_chineseish_words
-from app.storage.json_db import find_report, get_admin_records, get_metrics, get_recent_reports, update_report
+from app.storage.json_db import find_report, find_response, get_admin_records, get_metrics, get_recent_reports, update_report
 
 router = APIRouter(tags=["admin"])
 
@@ -18,6 +18,14 @@ def admin_metrics(_admin=Depends(require_admin)):
 @router.get("/admin/records")
 def admin_records(_admin=Depends(require_admin)):
     return {"records": get_admin_records()}
+
+
+@router.get("/admin/assessments/{response_id}")
+def admin_assessment(response_id: str, _admin=Depends(require_admin)):
+    response = find_response(response_id)
+    if not response:
+        raise HTTPException(status_code=404, detail={"error": "问卷不存在"})
+    return response.model_dump(mode="json")
 
 
 @router.put("/admin/reports/{report_id}")

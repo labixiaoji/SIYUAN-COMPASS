@@ -5,9 +5,29 @@ import json
 # These rules are a concise transcription of docs/生涯问卷更新版.docx.
 # Do not expand them with additional personality or career assumptions.
 QUESTION_RULES: dict[str, dict[str, object]] = {
+    "studentName": {
+        "purpose": "仅用于报告归属和测试回访，不作为画像判断证据，不在报告正文中展示。",
+        "checks": [],
+    },
+    "school": {
+        "purpose": "用于理解学生所处培养环境和资源背景，但不得臆测学校层次或编造校内政策。",
+        "checks": ["collegeMajor", "educationStage", "majorOutcomeAwareness"],
+    },
+    "studentNumber": {
+        "purpose": "仅用于区分同名学生和后台管理，不作为画像判断证据，不在报告正文中展示。",
+        "checks": [],
+    },
+    "contactInfo": {
+        "purpose": "仅用于测试回访，不作为画像判断证据，不在报告正文中展示。",
+        "checks": [],
+    },
+    "educationStage": {
+        "purpose": "决定年级、升学和就业问题的适用范围，避免本科、硕士、博士被不相关问题干扰。",
+        "checks": ["grade", "mastersIntention", "phdIntention", "doctoralCareerDirection"],
+    },
     "grade": {
         "purpose": "结合教育路径，测算距离第一次就业的剩余时间，确定实现理想就业的准备周期。",
-        "checks": ["mastersIntention", "phdIntention", "educationCertainty"],
+        "checks": ["educationStage", "mastersIntention", "phdIntention", "doctoralCareerDirection", "educationCertainty"],
     },
     "gender": {
         "purpose": "制定的生涯规划方案，需要结合性别特征有所调整",
@@ -36,6 +56,10 @@ QUESTION_RULES: dict[str, dict[str, object]] = {
     "phdPlan": {
         "purpose": "了解读博方向、条件差距和准备工作，结合拟获取学位给出建议。",
         "checks": ["phdIntention", "currentPreparations"],
+    },
+    "doctoralCareerDirection": {
+        "purpose": "博士生后续发展方向，不再分析读硕或读博，而是判断科研、企业研发、博士后、体制内、创业等路径的适配证据。",
+        "checks": ["educationStage", "phdPlan", "academicExperiences", "careerRiskPreference", "highIntensityExperience"],
     },
     "educationPathReasons": {
         "purpose": "分析教育路径原因、在意因素、生涯思考和迷茫点，并与5年、10年规划对应。",
@@ -113,9 +137,97 @@ QUESTION_RULES: dict[str, dict[str, object]] = {
         "purpose": "判断适合的工作类型，以及兴趣是否与自我规划匹配；不匹配时给出建议。",
         "checks": ["fiveYearIndustry", "fiveYearRole", "tenYearRole"],
     },
+    "currentGpa": {
+        "purpose": "作为学业竞争力线索，用于判断保研、考研、出国、读博和学术路径可行性；不能脱离满分、排名和经历单独下结论。",
+        "checks": ["gpaScale", "majorRank", "majorTotal", "academicExperiences", "mastersIntention", "phdIntention"],
+    },
+    "gpaScale": {
+        "purpose": "解释GPA分数的量尺，避免误读学业成绩。",
+        "checks": ["currentGpa"],
+    },
+    "majorRank": {
+        "purpose": "辅助判断学业竞争力和保研、奖学金、升学竞争基础。",
+        "checks": ["majorTotal", "currentGpa", "academicExperiences"],
+    },
+    "majorTotal": {
+        "purpose": "解释专业排名含义，避免把排名数字孤立解读。",
+        "checks": ["majorRank"],
+    },
+    "englishCertificates": {
+        "purpose": "判断出国、读研、外企或国际化岗位的语言准备情况。",
+        "checks": ["mastersIntention", "phdIntention", "fiveYearIndustry", "currentPreparations"],
+    },
+    "academicExperiences": {
+        "purpose": "识别科研、竞赛、论文、项目中的真实行为证据，用于验证学术潜力、执行力和专业匹配度。",
+        "checks": ["currentGpa", "praisedTraits", "traitEvidence", "currentPreparations"],
+    },
+    "failedCourseStatus": {
+        "purpose": "识别学业稳定性风险和需要补救的短板，不作道德评价。",
+        "checks": ["currentGpa", "majorRank", "healthEnergyStatus", "executionStyle"],
+    },
+    "hasSecondMajor": {
+        "purpose": "识别复合型发展路径和Plan B潜在来源。",
+        "checks": ["secondMajorName", "secondMajorProgress", "secondMajorCareerInterest", "fiveYearIndustry"],
+    },
+    "secondMajorName": {
+        "purpose": "了解第二专业方向，判断与主专业、目标行业和备选路径的关联。",
+        "checks": ["collegeMajor", "secondMajorProgress", "secondMajorCareerInterest"],
+    },
+    "secondMajorProgress": {
+        "purpose": "判断第二专业是否已有实质投入和成果，不把兴趣等同于能力。",
+        "checks": ["secondMajorName", "academicExperiences", "currentPreparations"],
+    },
+    "secondMajorCareerInterest": {
+        "purpose": "判断第二专业是否可能进入职业路径或仅作为兴趣拓展。",
+        "checks": ["secondMajorName", "fiveYearIndustry", "tenYearIndustry"],
+    },
+    "hasTransferredMajor": {
+        "purpose": "识别转专业经历或意愿背后的动机、适应能力和跨专业资源。",
+        "checks": ["originalMajorName", "transferReason", "originalMajorRetainedSkills"],
+    },
+    "originalMajorName": {
+        "purpose": "了解原专业背景，判断是否可以成为交叉方向或备选路径。",
+        "checks": ["collegeMajor", "originalMajorRetainedSkills", "fiveYearIndustry"],
+    },
+    "transferReason": {
+        "purpose": "分析转专业原因，区分兴趣变化、能力匹配、外部压力或信息不足。",
+        "checks": ["topValuesRanked", "careerConfusions", "originalMajorName"],
+    },
+    "originalMajorRetainedSkills": {
+        "purpose": "判断旧专业知识能力是否还能作为备选路径或复合优势。",
+        "checks": ["originalMajorName", "secondMajorName", "fiveYearRole"],
+    },
+    "praisedTraits": {
+        "purpose": "收集他人反馈中的潜在优势线索，但必须结合成果证据后才能判定为已验证优势。",
+        "checks": ["traitEvidence", "academicExperiences", "currentPreparations"],
+    },
+    "traitEvidence": {
+        "purpose": "验证被称赞特质是否产生过成果，区分已验证优势和待验证优势。",
+        "checks": ["praisedTraits", "academicExperiences", "currentPreparations"],
+    },
+    "immersiveActivities": {
+        "purpose": "识别稳定兴趣和可能长期投入的活动。",
+        "checks": ["interestScores", "fiveYearHobbiesSkills", "selfDrivenActivities"],
+    },
+    "favoriteKnowledgeAreas": {
+        "purpose": "识别主动学习偏好，判断专业、行业和岗位方向是否匹配。",
+        "checks": ["collegeMajor", "fiveYearIndustry", "interestScores"],
+    },
+    "selfDrivenActivities": {
+        "purpose": "判断内在动机和无需外部奖励时的行动倾向。",
+        "checks": ["immersiveActivities", "executionStyle", "longTermPersistence"],
+    },
+    "preferredWorkStyle": {
+        "purpose": "判断更偏好的工作方式，并与能力、兴趣、目标岗位进行交叉验证。",
+        "checks": ["abilityScores", "interestScores", "fiveYearRole"],
+    },
     "currentPreparations": {
         "purpose": "基于生涯规划判断执行力，并检查努力方向是否正确。",
         "checks": ["mastersPlan", "phdPlan", "fiveYearIndustry", "fiveYearRole"],
+    },
+    "preparationDetails": {
+        "purpose": "对已做准备进行具体化，验证课程、比赛、科研、项目、证书、作品、实习、社团等是否能支撑目标。",
+        "checks": ["currentPreparations", "academicExperiences", "targetJobAwareness"],
     },
     "missingResources": {
         "purpose": "判断执行力和当前短板，并给出补齐方向、能力或资源的建议。",
@@ -140,6 +252,50 @@ QUESTION_RULES: dict[str, dict[str, object]] = {
     "exerciseFrequency": {
         "purpose": "判断健康管理习惯能否支撑规划，并考虑将运动偏好结合进建议。",
         "checks": ["healthEnergyStatus"],
+    },
+    "longTermPersistence": {
+        "purpose": "判断长期目标在缺少监督和短期反馈时的坚持能力。",
+        "checks": ["executionStyle", "executionCase", "currentPreparations"],
+    },
+    "executionStyle": {
+        "purpose": "判断执行力和启动难度，结合实际案例而不是只看主观评价。",
+        "checks": ["executionCase", "currentPreparations", "missingResources"],
+    },
+    "executionCase": {
+        "purpose": "验证执行力自评的真实案例，识别能坚持和容易中断的条件。",
+        "checks": ["executionStyle", "longTermPersistence"],
+    },
+    "failureRecoveryTime": {
+        "purpose": "判断挫折恢复速度和路径风险承受能力，不作心理诊断。",
+        "checks": ["selfDoubtFrequency", "problemSolvingStyle", "supportNeed"],
+    },
+    "negativeFeedbackReaction": {
+        "purpose": "了解面对负面评价的典型反应，用于设计反馈和复盘方式，不作人格定论。",
+        "checks": ["failureRecoveryTime", "selfDoubtFrequency"],
+    },
+    "selfDoubtFrequency": {
+        "purpose": "识别自我怀疑对行动的影响，不作心理诊断。",
+        "checks": ["failureRecoveryTime", "problemSolvingStyle", "supportNeed"],
+    },
+    "problemSolvingStyle": {
+        "purpose": "判断遇到问题时是主动解决、观察后行动、依赖外部推动还是回避。",
+        "checks": ["executionStyle", "missingResources", "supportNeed"],
+    },
+    "supportNeed": {
+        "purpose": "判断恢复和推进目标时需要的外部支持类型。",
+        "checks": ["problemSolvingStyle", "jobInfoChannels"],
+    },
+    "highIntensityExperience": {
+        "purpose": "判断高强度投入承受能力，辅助判断科研、考研、求职、企业研发等路径节奏适配。",
+        "checks": ["healthEnergyStatus", "executionStyle", "careerRiskPreference"],
+    },
+    "routineWorkTolerance": {
+        "purpose": "判断对事务性、重复性、细节型工作的接受程度，辅助判断体制内、运营、行政、科研辅助等路径适配。",
+        "checks": ["interestScores", "preferredWorkStyle", "careerRiskPreference"],
+    },
+    "careerRiskPreference": {
+        "purpose": "判断对稳定、市场风险和自主性之间的取舍，辅助选择体制内、企业、创业或自由职业路径。",
+        "checks": ["topValuesRanked", "fiveYearFamilyStatus", "routineWorkTolerance", "highIntensityExperience"],
     },
     "careerConfusions": {
         "purpose": "确定报告重点回答的问题，并按所选困惑分析原因和给出建议。",

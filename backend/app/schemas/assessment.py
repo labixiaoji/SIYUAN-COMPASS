@@ -22,6 +22,11 @@ class InterestScores(BaseModel):
 
 
 class AssessmentResponseInput(BaseModel):
+    studentName: str = ""
+    school: str = ""
+    studentNumber: str = ""
+    contactInfo: str = ""
+    educationStage: str = ""
     grade: str
     gender: str
     collegeMajor: str
@@ -30,6 +35,7 @@ class AssessmentResponseInput(BaseModel):
     mastersPlan: Optional[str] = None
     phdIntention: str
     phdPlan: Optional[str] = None
+    doctoralCareerDirection: str = ""
     educationPathReasons: list[str]
     educationCertainty: int = Field(ge=1, le=5)
     fiveYearCity: str
@@ -49,13 +55,46 @@ class AssessmentResponseInput(BaseModel):
     topValuesRanked: list[str]
     abilityScores: AbilityScores
     interestScores: InterestScores
+    currentGpa: Optional[str] = None
+    gpaScale: Optional[str] = None
+    majorRank: Optional[str] = None
+    majorTotal: Optional[str] = None
+    englishCertificates: Optional[str] = None
+    academicExperiences: Optional[str] = None
+    failedCourseStatus: str = ""
+    hasSecondMajor: str = ""
+    secondMajorName: Optional[str] = None
+    secondMajorProgress: Optional[str] = None
+    secondMajorCareerInterest: Optional[str] = None
+    hasTransferredMajor: str = ""
+    originalMajorName: Optional[str] = None
+    transferReason: Optional[str] = None
+    originalMajorRetainedSkills: Optional[str] = None
+    praisedTraits: list[str] = Field(default_factory=list)
+    traitEvidence: Optional[str] = None
+    immersiveActivities: Optional[str] = None
+    favoriteKnowledgeAreas: Optional[str] = None
+    selfDrivenActivities: Optional[str] = None
+    preferredWorkStyle: str = ""
     currentPreparations: list[str]
+    preparationDetails: Optional[str] = None
     missingResources: list[str]
     majorOutcomeAwareness: str
     targetJobAwareness: str
     jobInfoChannels: list[str]
     healthEnergyStatus: str
     exerciseFrequency: Optional[str] = None
+    longTermPersistence: int = Field(default=3, ge=1, le=5)
+    executionStyle: str = ""
+    executionCase: Optional[str] = None
+    failureRecoveryTime: str = ""
+    negativeFeedbackReaction: Optional[str] = None
+    selfDoubtFrequency: str = ""
+    problemSolvingStyle: str = ""
+    supportNeed: str = ""
+    highIntensityExperience: str = ""
+    routineWorkTolerance: str = ""
+    careerRiskPreference: str = ""
     careerConfusions: list[str]
     mainConfusionText: Optional[str] = None
     userId: Optional[str] = None

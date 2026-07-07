@@ -15,6 +15,11 @@ export type InterestScores = {
 };
 
 export type AssessmentResponseInput = {
+  studentName: string;
+  school: string;
+  studentNumber: string;
+  contactInfo: string;
+  educationStage: string;
   grade: string;
   gender: string;
   collegeMajor: string;
@@ -23,6 +28,7 @@ export type AssessmentResponseInput = {
   mastersPlan?: string;
   phdIntention: string;
   phdPlan?: string;
+  doctoralCareerDirection: string;
   educationPathReasons: string[];
   educationCertainty: number;
   fiveYearCity: string;
@@ -42,13 +48,53 @@ export type AssessmentResponseInput = {
   topValuesRanked: string[];
   abilityScores: AbilityScores;
   interestScores: InterestScores;
+  currentGpa?: string;
+  gpaScale?: string;
+  majorRank?: string;
+  majorTotal?: string;
+  englishCertificates?: string;
+  academicExperiences?: string;
+  failedCourseStatus: string;
+  hasSecondMajor: string;
+  secondMajorName?: string;
+  secondMajorProgress?: string;
+  secondMajorCareerInterest?: string;
+  hasTransferredMajor: string;
+  originalMajorName?: string;
+  transferReason?: string;
+  originalMajorRetainedSkills?: string;
+  praisedTraits: string[];
+  traitEvidence?: string;
+  immersiveActivities?: string;
+  favoriteKnowledgeAreas?: string;
+  selfDrivenActivities?: string;
+  preferredWorkStyle: string;
   currentPreparations: string[];
+  preparationDetails?: string;
   missingResources: string[];
   majorOutcomeAwareness: string;
   targetJobAwareness: string;
   jobInfoChannels: string[];
   healthEnergyStatus: string;
   exerciseFrequency?: string;
+  longTermPersistence: number;
+  executionStyle: string;
+  executionCase?: string;
+  failureRecoveryTime: string;
+  negativeFeedbackReaction?: string;
+  selfDoubtFrequency: string;
+  problemSolvingStyle: string;
+  supportNeed: string;
+  highIntensityExperience: string;
+  routineWorkTolerance: string;
+  careerRiskPreference: string;
   careerConfusions: string[];
   mainConfusionText?: string;
+};
+
+export type AssessmentResponse = AssessmentResponseInput & {
+  id: string;
+  userId: string;
+  submittedAt: string;
+  createdAt: string;
 };

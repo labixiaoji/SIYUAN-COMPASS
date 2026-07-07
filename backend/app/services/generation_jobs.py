@@ -13,21 +13,33 @@ from app.storage.json_db import (
     find_user,
     save_assessment_progress,
     save_generation_job,
+    save_generation_job_if_user_idle,
     save_report,
 )
 
-ACTIVE_TASKS: set[asyncio.Task[None]] = set()
+ACTIVE_TASKS: dict[str, asyncio.Task[None]] = {}
+
+
+class ActiveGenerationJobError(RuntimeError):
+    def __init__(self, active_job: GenerationJobStatus) -> None:
+        self.active_job = active_job
+        super().__init__("该账号已有报告正在生成中")
 
 
 def _set_job(job_id: str, **updates: object) -> None:
     current = find_generation_job(job_id)
     if not current:
         raise RuntimeError("生成任务不存在")
-    save_generation_job(current.model_copy(update=updates))
+    save_generation_job(current.model_copy(update={**updates, "updatedAt": now_iso()}))
+
+
+def now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
 
 def create_generation_job(user_id: str) -> GenerationJobStatus:
     job_id = str(uuid4())
+    now = now_iso()
     job = GenerationJobStatus(
         jobId=job_id,
         status="queued",
@@ -35,8 +47,12 @@ def create_generation_job(user_id: str) -> GenerationJobStatus:
         progress=5,
         message="问卷已接收，等待开始分析。",
         userId=user_id,
+        createdAt=now,
+        updatedAt=now,
     )
-    save_generation_job(job)
+    active_job = save_generation_job_if_user_idle(job)
+    if active_job:
+        raise ActiveGenerationJobError(active_job)
     return job
 
 
@@ -46,8 +62,29 @@ def get_generation_job(job_id: str) -> GenerationJobStatus | None:
 
 def start_generation_job(job_id: str, input_data: AssessmentResponseInput) -> None:
     task = asyncio.create_task(run_generation_job(job_id, input_data))
-    ACTIVE_TASKS.add(task)
-    task.add_done_callback(ACTIVE_TASKS.discard)
+    ACTIVE_TASKS[job_id] = task
+    task.add_done_callback(lambda _task: ACTIVE_TASKS.pop(job_id, None))
+
+
+def cancel_generation_job(job_id: str) -> GenerationJobStatus | None:
+    job = find_generation_job(job_id)
+    if not job:
+        return None
+    if job.status not in {"queued", "running"}:
+        return job
+
+    task = ACTIVE_TASKS.get(job_id)
+    if task and not task.done():
+        task.cancel()
+
+    _set_job(
+        job_id,
+        status="cancelled",
+        stage="cancelled",
+        message="报告生成已取消。",
+        error=None,
+    )
+    return find_generation_job(job_id)
 
 
 async def run_generation_job(job_id: str, input_data: AssessmentResponseInput) -> None:
@@ -130,6 +167,15 @@ async def run_generation_job(job_id: str, input_data: AssessmentResponseInput) -
             reportId=report.id,
             generationStatus=report.generationStatus,
         )
+    except asyncio.CancelledError:
+        _set_job(
+            job_id,
+            status="cancelled",
+            stage="cancelled",
+            message="报告生成已取消。",
+            error=None,
+        )
+        raise
     except Exception as error:
         _set_job(
             job_id,

@@ -3,6 +3,7 @@ import unittest
 
 
 STORAGE_SOURCE = Path("app/storage/json_db.py").read_text(encoding="utf-8")
+ADMIN_API_SOURCE = Path("app/api/admin.py").read_text(encoding="utf-8")
 
 
 class PostgresStorageSchemaTest(unittest.TestCase):
@@ -25,6 +26,7 @@ class PostgresStorageSchemaTest(unittest.TestCase):
         expected_fields = (
             "educationPathReasons",
             "topValuesRanked",
+            "praisedTraits",
             "currentPreparations",
             "missingResources",
             "jobInfoChannels",
@@ -32,6 +34,23 @@ class PostgresStorageSchemaTest(unittest.TestCase):
         )
         for field in expected_fields:
             self.assertIn(field, STORAGE_SOURCE)
+
+    def test_generation_jobs_have_active_user_guard(self):
+        self.assertIn("idx_generation_jobs_user_status_updated_at", STORAGE_SOURCE)
+        self.assertIn("save_generation_job_if_user_idle", STORAGE_SOURCE)
+        self.assertIn("FOR UPDATE", STORAGE_SOURCE)
+
+    def test_admin_records_include_report_feedbacks(self):
+        self.assertIn("feedbacks_by_report", STORAGE_SOURCE)
+        self.assertIn('"feedbacks"', STORAGE_SOURCE)
+
+    def test_admin_records_include_career_confusion_choices(self):
+        self.assertIn("confusions_by_response", STORAGE_SOURCE)
+        self.assertIn("question_code = 'careerConfusions'", STORAGE_SOURCE)
+
+    def test_admin_can_fetch_assessment_detail(self):
+        self.assertIn('/admin/assessments/{response_id}', ADMIN_API_SOURCE)
+        self.assertIn("find_response", ADMIN_API_SOURCE)
 
 
 if __name__ == "__main__":

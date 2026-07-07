@@ -54,6 +54,21 @@ GET  /api/assessment-jobs/{jobId}
 
 ## 本地启动
 
+首次运行先在项目根目录创建唯一环境配置：
+
+```bash
+cp .env.example .env
+```
+
+至少填写：
+
+```text
+DEEPSEEK_API_KEY
+AUTH_SECRET
+ADMIN_PASSWORD
+POSTGRES_PASSWORD
+```
+
 后端：
 
 ```bash
@@ -82,14 +97,15 @@ npm run dev
 
 ## 环境变量
 
-后端复制 `backend/.env.example` 为 `backend/.env`，按需配置 DeepSeek：
+项目只保留根目录 `.env` 作为唯一环境配置文件。本地后端、本地前端和 Docker Compose 都读取这一份配置：
 
 ```text
 DEEPSEEK_API_KEY=
 DEEPSEEK_BASE_URL=https://api.deepseek.com
 DEEPSEEK_MODEL=deepseek-chat
 LLM_TIMEOUT_SECONDS=180
-FRONTEND_ORIGINS=http://localhost:5173
+FRONTEND_ORIGINS=http://localhost:5173,http://localhost:8080,http://localhost
+VITE_API_BASE_URL=http://localhost:8000/api
 AUTH_SECRET=please-change-to-a-long-random-string
 AUTH_TOKEN_HOURS=72
 ADMIN_USERNAME=admin
@@ -99,12 +115,7 @@ POSTGRES_DB=siyuan_compass
 POSTGRES_USER=siyuan
 POSTGRES_PASSWORD=please-change-postgres-password
 DATABASE_URL=postgresql://siyuan:please-change-postgres-password@localhost:5432/siyuan_compass
-```
-
-前端复制 `frontend/.env.example` 为 `frontend/.env`：
-
-```text
-VITE_API_BASE_URL=http://localhost:8000/api
+HTTP_PORT=8080
 ```
 
 必须配置有效的 `DEEPSEEK_API_KEY`。模型未配置、超时或调用失败时，报告接口会直接返回错误，不会生成备用模板报告。
@@ -128,7 +139,7 @@ PostgreSQL、FastAPI 后端和 Nginx 前端。后端保持单 worker，避免报
 2. 创建生产环境变量：
 
 ```bash
-cp .env.production.example .env
+cp .env.example .env
 openssl rand -hex 32
 ```
 
@@ -176,3 +187,32 @@ Caddy 或云厂商负载均衡，将 HTTPS 请求转发到服务器的 `HTTP_POR
 
 注意：管理员账号只在首次启动且账号不存在时创建。数据库里已存在管理员后，
 仅修改 `.env` 中的 `ADMIN_PASSWORD` 不会自动修改已有密码。
+
+## Docker 本地开发模式
+
+如果希望本地代码修改后容器内自动生效，使用开发 Compose：
+
+```bash
+docker compose -f docker-compose.dev.yml up
+```
+
+访问地址：
+
+```text
+前端：http://localhost:5173
+后端：http://localhost:8000
+```
+
+开发模式特点：
+
+- 使用独立项目名 `siyuan-compass-dev`，不会占用部署模式的容器名。
+- 使用独立数据库 volume `postgres-dev-data`，不会影响部署模式数据。
+- 后端挂载 `backend/app`，并使用 `uvicorn --reload`。
+- 前端挂载 `frontend`，并运行 Vite dev server。
+- 前端依赖安装在 Docker volume `frontend-node-modules`，不会覆盖宿主机的 `frontend/node_modules`。
+
+停止开发模式：
+
+```bash
+docker compose -f docker-compose.dev.yml down
+```

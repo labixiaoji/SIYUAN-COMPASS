@@ -17,6 +17,7 @@ from app.schemas.report import CareerBlueprintReport, ReportFeedback
 ASSESSMENT_LIST_FIELDS = (
     "educationPathReasons",
     "topValuesRanked",
+    "praisedTraits",
     "currentPreparations",
     "missingResources",
     "jobInfoChannels",
@@ -139,6 +140,8 @@ CREATE INDEX IF NOT EXISTS idx_reports_created_at
     ON reports(created_at);
 CREATE INDEX IF NOT EXISTS idx_report_feedback_report_id
     ON report_feedback(report_id);
+CREATE INDEX IF NOT EXISTS idx_generation_jobs_user_status_updated_at
+    ON generation_jobs(user_id, status, updated_at);
 """
 
 
@@ -620,6 +623,24 @@ def save_feedback(feedback: ReportFeedback) -> None:
         )
 
 
+def _iso_timestamp(value: Any) -> str | None:
+    if value is None:
+        return None
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    return str(value)
+
+
+def _generation_job_from_row(row: dict[str, Any] | None) -> GenerationJobStatus | None:
+    if not row:
+        return None
+    record = dict(row["data"])
+    updated_at = _iso_timestamp(row.get("updated_at"))
+    record.setdefault("createdAt", updated_at)
+    record["updatedAt"] = updated_at
+    return GenerationJobStatus.model_validate(record)
+
+
 def save_generation_job(job: GenerationJobStatus) -> None:
     record = job.model_dump(mode="json")
     with _connect() as connection:
@@ -644,13 +665,73 @@ def save_generation_job(job: GenerationJobStatus) -> None:
         )
 
 
+def save_generation_job_if_user_idle(job: GenerationJobStatus) -> GenerationJobStatus | None:
+    if not job.userId:
+        save_generation_job(job)
+        return None
+
+    record = job.model_dump(mode="json")
+    with _connect() as connection:
+        connection.execute("SELECT id FROM users WHERE id = %s FOR UPDATE", (job.userId,))
+        active_row = connection.execute(
+            """
+            SELECT data, updated_at
+            FROM generation_jobs
+            WHERE user_id = %s
+              AND status IN ('queued', 'running')
+              AND updated_at >= now() - interval '30 minutes'
+            ORDER BY updated_at DESC
+            LIMIT 1
+            """,
+            (job.userId,),
+        ).fetchone()
+        if active_row:
+            return _generation_job_from_row(active_row)
+
+        connection.execute(
+            """
+            INSERT INTO generation_jobs (job_id, user_id, status, stage, data)
+            VALUES (%s, %s, %s, %s, %s)
+            """,
+            (
+                job.jobId,
+                job.userId,
+                job.status,
+                job.stage,
+                Jsonb(record),
+            ),
+        )
+    return None
+
+
 def find_generation_job(job_id: str) -> GenerationJobStatus | None:
     with _connect() as connection:
         row = connection.execute(
-            "SELECT data FROM generation_jobs WHERE job_id = %s",
+            "SELECT data, updated_at FROM generation_jobs WHERE job_id = %s",
             (job_id,),
         ).fetchone()
-    return GenerationJobStatus.model_validate(row["data"]) if row else None
+    return _generation_job_from_row(row)
+
+
+def get_user_generation_jobs(user_id: str, limit: int = 20) -> list[dict[str, Any]]:
+    with _connect() as connection:
+        rows = connection.execute(
+            """
+            SELECT data, updated_at
+            FROM generation_jobs
+            WHERE user_id = %s
+              AND status <> 'success'
+            ORDER BY updated_at DESC
+            LIMIT %s
+            """,
+            (user_id, limit),
+        ).fetchall()
+
+    return [
+        job.model_dump(mode="json")
+        for row in rows
+        if (job := _generation_job_from_row(row)) is not None
+    ]
 
 
 def get_metrics() -> dict[str, Any]:
@@ -671,7 +752,7 @@ def get_metrics() -> dict[str, Any]:
         ).fetchone()
         low_score_rows = connection.execute(
             """
-            SELECT report_id
+            SELECT report_id, MAX(created_at) AS latest_feedback_at
             FROM report_feedback
             WHERE LEAST(
                 understanding_score,
@@ -679,6 +760,8 @@ def get_metrics() -> dict[str, Any]:
                 action_score,
                 recommend_score
             ) <= 2
+            GROUP BY report_id
+            ORDER BY latest_feedback_at DESC
             """
         ).fetchall()
 
@@ -720,7 +803,16 @@ def get_user_reports(user_id: str) -> list[dict[str, Any]]:
             """,
             (user_id,),
         ).fetchall()
-    return [dict(row["data"]) for row in rows]
+
+    reports: list[dict[str, Any]] = []
+    for row in rows:
+        report = dict(row["data"])
+        response = find_response(report["responseId"])
+        report["inputSnapshot"] = {
+            "response": response.model_dump(mode="json") if response else None,
+        }
+        reports.append(report)
+    return reports
 
 
 def get_admin_records() -> list[dict[str, Any]]:
@@ -734,30 +826,89 @@ def get_admin_records() -> list[dict[str, Any]]:
                 users.display_name,
                 assessment_responses.grade,
                 assessment_responses.college_major,
-                assessment_responses.submitted_at
+                assessment_responses.submitted_at,
+                assessment_responses.data AS assessment_data
             FROM reports
             LEFT JOIN users ON users.id = reports.user_id
             LEFT JOIN assessment_responses ON assessment_responses.id = reports.response_id
             ORDER BY reports.created_at DESC
             """
         ).fetchall()
+        report_ids = [
+            dict(row["report"]).get("id")
+            for row in rows
+            if row["report"]
+        ]
+        response_ids = [
+            dict(row["report"]).get("responseId")
+            for row in rows
+            if row["report"]
+        ]
+        feedback_rows = []
+        if report_ids:
+            feedback_rows = connection.execute(
+                """
+                SELECT report_id, data
+                FROM report_feedback
+                WHERE report_id = ANY(%s::text[])
+                ORDER BY created_at DESC
+                """,
+                (report_ids,),
+            ).fetchall()
+        confusion_choice_rows = []
+        if response_ids:
+            confusion_choice_rows = connection.execute(
+                """
+                SELECT assessment_id, option_value, sort_order
+                FROM assessment_choices
+                WHERE question_code = 'careerConfusions'
+                  AND assessment_id = ANY(%s::text[])
+                ORDER BY assessment_id, sort_order
+                """,
+                (response_ids,),
+            ).fetchall()
+
+    feedbacks_by_report: dict[str, list[dict[str, Any]]] = {}
+    for feedback_row in feedback_rows:
+        feedbacks_by_report.setdefault(feedback_row["report_id"], []).append(dict(feedback_row["data"]))
+
+    confusions_by_response: dict[str, list[str]] = {}
+    for choice_row in confusion_choice_rows:
+        confusions_by_response.setdefault(choice_row["assessment_id"], []).append(choice_row["option_value"])
 
     records = []
     for row in rows:
         report = dict(row["report"])
+        assessment_data = dict(row["assessment_data"] or {})
+        response_id = report.get("responseId", "")
+        student_name = assessment_data.get("studentName") or row["display_name"] or row["username"] or "未知用户"
+        school = assessment_data.get("school") or ""
+        student_number = assessment_data.get("studentNumber") or ""
+        contact_info = assessment_data.get("contactInfo") or ""
+        career_confusions = (
+            confusions_by_response.get(response_id)
+            or assessment_data.get("careerConfusions")
+            or []
+        )
         records.append(
             {
                 "report": report,
                 "student": {
                     "id": row["user_id"],
                     "username": row["username"] or "未知用户",
-                    "displayName": row["display_name"] or "未知用户",
+                    "displayName": student_name,
+                    "school": school,
+                    "studentNumber": student_number,
+                    "contactInfo": contact_info,
                 },
                 "assessment": {
+                    "educationStage": assessment_data.get("educationStage") or "",
                     "grade": row["grade"] or "",
                     "collegeMajor": row["college_major"] or "",
+                    "careerConfusions": career_confusions,
                     "submittedAt": row["submitted_at"] or report["createdAt"],
                 },
+                "feedbacks": feedbacks_by_report.get(report["id"], []),
             }
         )
     return records

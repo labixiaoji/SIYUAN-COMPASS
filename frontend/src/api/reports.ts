@@ -1,4 +1,5 @@
 import { apiRequest } from "./client";
+import type { GenerationJobStatus } from "./assessments";
 import type { CareerBlueprintReport } from "../types/report";
 
 export function fetchReport(reportId: string) {
@@ -6,7 +7,7 @@ export function fetchReport(reportId: string) {
 }
 
 export function fetchMyReports() {
-  return apiRequest<{ reports: CareerBlueprintReport[] }>("/reports/mine");
+  return apiRequest<{ reports: CareerBlueprintReport[]; jobs: GenerationJobStatus[] }>("/reports/mine");
 }
 
 export function submitReportFeedback(

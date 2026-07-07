@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+ROOT_ENV_FILE = Path(__file__).resolve().parents[3] / ".env"
 
 
 class Settings(BaseSettings):
@@ -18,7 +21,7 @@ class Settings(BaseSettings):
     admin_display_name: str = "系统管理员"
     database_url: str = "postgresql://siyuan:siyuan_password@localhost:5432/siyuan_compass"
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(env_file=ROOT_ENV_FILE, env_file_encoding="utf-8", extra="ignore")
 
     @property
     def cors_origins(self) -> list[str]:

@@ -12,7 +12,7 @@ class GenerationJobCreated(BaseModel):
 
 class GenerationJobStatus(BaseModel):
     jobId: str
-    status: Literal["queued", "running", "success", "failed"]
+    status: Literal["queued", "running", "success", "failed", "cancelled"]
     stage: str
     progress: int = Field(ge=0, le=100)
     message: str
@@ -22,3 +22,5 @@ class GenerationJobStatus(BaseModel):
     reportId: Optional[str] = None
     generationStatus: Optional[str] = None
     error: Optional[str] = None
+    createdAt: Optional[str] = None
+    updatedAt: Optional[str] = None

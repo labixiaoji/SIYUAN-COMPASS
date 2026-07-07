@@ -5,7 +5,15 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from app.services.profile_analyzer import ProfileAnalysisError, analyze_career_profile
 from app.services.report_generator import ReportGenerationError, generate_report
 from app.services.auth import require_user
-from app.storage.json_db import find_profile, find_report, find_response, get_user_reports, update_profile, update_report
+from app.storage.json_db import (
+    find_profile,
+    find_report,
+    find_response,
+    get_user_generation_jobs,
+    get_user_reports,
+    update_profile,
+    update_report,
+)
 
 router = APIRouter(tags=["reports"])
 
@@ -29,7 +37,10 @@ def get_report_by_query(
 
 @router.get("/reports/mine")
 def get_my_reports(user=Depends(require_user)):
-    return {"reports": get_user_reports(user["id"])}
+    return {
+        "reports": get_user_reports(user["id"]),
+        "jobs": get_user_generation_jobs(user["id"]),
+    }
 
 
 @router.get("/reports/{report_id}")

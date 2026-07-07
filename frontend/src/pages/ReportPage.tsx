@@ -41,6 +41,15 @@ export function ReportPage() {
         <p>生成状态：{report.generationStatus} · 字数：{report.wordCount}</p>
       </div>
       <ReportRenderer content={report.content} />
+      {user?.role !== "admin" && (
+        <section className="feedback-cta">
+          <div>
+            <h2>请为本报告评分</h2>
+            <p>你的评分会帮助我们判断报告是否真的理解了你的困惑，并继续改进后续建议。</p>
+          </div>
+          <Link className="button" to={`/reports/${report.id}/feedback`}>去评分</Link>
+        </section>
+      )}
       <div className="actions">
         {user?.role === "admin" ? (
           <>

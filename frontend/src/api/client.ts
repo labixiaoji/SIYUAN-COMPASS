@@ -18,7 +18,11 @@ export async function apiRequest<T>(path: string, options?: RequestInit): Promis
     const detail = data.detail;
     const stagedError = detail?.stage && detail?.error ? `${detail.stage}：${detail.error}` : undefined;
     const message = stagedError || detail?.errors?.join("；") || detail?.error || data.error || "请求失败";
-    throw new Error(message);
+    const error = new Error(message) as Error & { fieldErrors?: Record<string, string> };
+    if (detail?.fieldErrors) {
+      error.fieldErrors = detail.fieldErrors;
+    }
+    throw error;
   }
 
   return data as T;

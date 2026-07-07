@@ -11,7 +11,7 @@ export type AssessmentSubmitResult = {
 
 export type GenerationJobStatus = {
   jobId: string;
-  status: "queued" | "running" | "success" | "failed";
+  status: "queued" | "running" | "success" | "failed" | "cancelled";
   stage: string;
   progress: number;
   message: string;
@@ -21,6 +21,8 @@ export type GenerationJobStatus = {
   reportId?: string;
   generationStatus?: string;
   error?: string;
+  createdAt?: string;
+  updatedAt?: string;
 };
 
 export function submitAssessment(input: AssessmentResponseInput & { userId?: string }) {
@@ -39,4 +41,10 @@ export function createAssessmentJob(input: AssessmentResponseInput & { userId?: 
 
 export function fetchAssessmentJob(jobId: string) {
   return apiRequest<GenerationJobStatus>(`/assessment-jobs/${jobId}`);
+}
+
+export function cancelAssessmentJob(jobId: string) {
+  return apiRequest<GenerationJobStatus>(`/assessment-jobs/${jobId}/cancel`, {
+    method: "POST"
+  });
 }

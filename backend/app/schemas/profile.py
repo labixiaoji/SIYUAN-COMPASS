@@ -72,6 +72,7 @@ class ProfileAnalysisResult(BaseModel):
     educationPathAssessments: list[EducationPathAssessment] = Field(default_factory=list)
     planA: PlanOption | None = None
     planB: PlanOption | None = None
+    planC: PlanOption | None = None
     reportEvidenceMap: dict[str, list[str]] = Field(default_factory=dict)
 
     @field_validator("reportEvidenceMap", mode="before")
@@ -116,6 +117,7 @@ class CareerProfile(BaseModel):
     educationPathAssessments: list[EducationPathAssessment] = Field(default_factory=list)
     planA: PlanOption | None = None
     planB: PlanOption | None = None
+    planC: PlanOption | None = None
     reportEvidenceMap: dict[str, list[str]] = Field(default_factory=dict)
 
     # Legacy fields remain optional so existing JSON records can still be read.

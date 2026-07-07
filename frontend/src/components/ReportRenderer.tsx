@@ -78,7 +78,7 @@ function isActionSection(title: string) {
 
 function isActionDetail(value: string) {
   const text = stripInlineMarkdown(value);
-  return /^(做什么|为什么做|对\s*Plan\s*A\s*的帮助|如何为\s*Plan\s*B\s*预留后手|为\s*Plan\s*B\s*预留后手|完成标准|建议时间)[：:]/i.test(text);
+  return /^(做什么|为什么做|对\s*Plan\s*A\s*的帮助|如何为\s*Plan\s*B\s*预留后手|为\s*Plan\s*B\s*预留后手|如何验证\s*Plan\s*C|对\s*Plan\s*C\s*的帮助|完成标准|建议时间)[：:]/i.test(text);
 }
 
 function isChineseSectionHeading(value: string) {
@@ -90,7 +90,7 @@ function isSubheading(value: string) {
 }
 
 function isPlanHeading(value: string) {
-  return /^Plan\s*[AB]\s*[：:]/i.test(stripInlineMarkdown(value));
+  return /^Plan\s*[ABC]\s*[：:]/i.test(stripInlineMarkdown(value));
 }
 
 function parseReport(content: string): ReportBlock[] {
