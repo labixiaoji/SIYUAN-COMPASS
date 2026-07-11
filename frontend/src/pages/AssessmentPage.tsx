@@ -222,7 +222,7 @@ const requiredFields: Array<{
 }> = [
   { key: "studentName", step: 0, message: "请填写姓名" },
   { key: "school", step: 0, message: "请填写学校" },
-  { key: "studentNumber", step: 0, message: "请填写学号或用户编号" },
+  { key: "studentNumber", step: 0, message: "请填写学号" },
   { key: "contactInfo", step: 0, message: "请填写联系方式" },
   { key: "educationStage", step: 0, message: "请选择学历阶段" },
   { key: "grade", step: 0, message: "请选择年级" },
@@ -633,7 +633,7 @@ export function AssessmentPage() {
               <p className="hint">以下信息仅用于报告归属、测试回访和系统优化，不会用于公开展示。</p>
               {textField("studentName", "你的姓名是？", false, "例如：张同学")}
               {textField("school", "你的学校是？", false, "例如：上海交通大学")}
-              {textField("studentNumber", "你的学号或用户编号是？", false, "用于区分同名学生")}
+              {textField("studentNumber", "你的学号是？", false, "用于区分同名学生")}
               {textField("contactInfo", "你的联系方式是？", false, "手机号、邮箱或微信号均可")}
               <div className={fieldClass("educationStage")} data-field="educationStage">
                 <label>{requiredLabel("educationStage", "你当前的学历阶段是？")}</label>

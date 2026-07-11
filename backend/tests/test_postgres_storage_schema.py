@@ -52,6 +52,10 @@ class PostgresStorageSchemaTest(unittest.TestCase):
         self.assertIn('/admin/assessments/{response_id}', ADMIN_API_SOURCE)
         self.assertIn("find_response", ADMIN_API_SOURCE)
 
+    def test_report_lookup_includes_account_display_name(self):
+        self.assertIn("LEFT JOIN users ON users.id = reports.user_id", STORAGE_SOURCE)
+        self.assertIn('record["accountDisplayName"]', STORAGE_SOURCE)
+
 
 if __name__ == "__main__":
     unittest.main()

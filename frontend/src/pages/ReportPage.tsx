@@ -34,10 +34,15 @@ export function ReportPage() {
     );
   }
 
+  const snapshotStudentName = report.inputSnapshot?.response?.studentName;
+  const studentName = typeof snapshotStudentName === "string" ? snapshotStudentName.trim() : "";
+  const currentAccountName = user?.id === report.userId ? user.displayName.trim() : "";
+  const displayName = studentName || report.accountDisplayName?.trim() || currentAccountName || "学生";
+
   return (
     <main className="shell page">
       <div className="page-title">
-        <h1>{report.title}</h1>
+        <h1>{displayName}的生涯蓝图</h1>
         <p>生成状态：{report.generationStatus} · 字数：{report.wordCount}</p>
       </div>
       <ReportRenderer content={report.content} />

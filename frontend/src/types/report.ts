@@ -18,6 +18,7 @@ export type CareerBlueprintReport = {
   updatedAt: string;
   editedAt?: string;
   editedBy?: string;
+  accountDisplayName?: string;
   inputSnapshot?: {
     response?: Partial<AssessmentResponseInput> & Record<string, unknown>;
   };

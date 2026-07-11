@@ -3,7 +3,7 @@ from app.schemas.assessment import AssessmentResponseInput
 REQUIRED_STRING_FIELDS = {
     "studentName": "请填写姓名",
     "school": "请填写学校",
-    "studentNumber": "请填写学号或用户编号",
+    "studentNumber": "请填写学号",
     "contactInfo": "请填写联系方式",
     "educationStage": "请选择学历阶段",
     "grade": "请选择年级",

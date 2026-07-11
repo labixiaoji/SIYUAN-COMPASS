@@ -29,3 +29,10 @@ export function register(username: string, password: string, displayName: string
 export function fetchCurrentUser() {
   return apiRequest<AuthUser>("/auth/me");
 }
+
+export function changePassword(currentPassword: string, newPassword: string) {
+  return apiRequest<{ message: string }>("/auth/change-password", {
+    method: "POST",
+    body: JSON.stringify({ currentPassword, newPassword })
+  });
+}

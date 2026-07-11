@@ -105,7 +105,7 @@ export function AdminPage() {
           ) : (
             <div className="low-score-list">
               {metrics.lowScoreReports.map((reportId) => (
-                <Link key={reportId} to={`/reports/${reportId}`}>报告 {reportId.slice(0, 8)}</Link>
+                <a key={reportId} href={`#report-${reportId}`}>报告 {reportId.slice(0, 8)}</a>
               ))}
             </div>
           )}
@@ -130,7 +130,7 @@ export function AdminPage() {
               const feedbacks = record.feedbacks ?? [];
               const warnings = reportWarnings(record);
               return (
-                <article className="panel admin-record-card" key={record.report.id}>
+                <article className="panel admin-record-card" id={`report-${record.report.id}`} key={record.report.id}>
                   <div className="admin-record-top">
                     <div>
                       <div className="admin-record-title">

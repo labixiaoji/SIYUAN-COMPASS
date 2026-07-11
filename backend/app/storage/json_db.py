@@ -217,6 +217,15 @@ def find_user_by_username(username: str) -> dict[str, Any] | None:
     return _user_from_row(row)
 
 
+def update_user_password(user_id: str, password_hash: str) -> bool:
+    with _connect() as connection:
+        result = connection.execute(
+            "UPDATE users SET password_hash = %s WHERE id = %s",
+            (password_hash, user_id),
+        )
+    return result.rowcount == 1
+
+
 def _upsert_user(connection, user: dict[str, Any]) -> None:
     connection.execute(
         """
@@ -383,6 +392,7 @@ def save_assessment_progress(response: AssessmentResponse, profile: CareerProfil
 def _report_storage_record(report: CareerBlueprintReport) -> dict[str, Any]:
     record = report.model_dump(mode="json")
     record.pop("inputSnapshot", None)
+    record.pop("accountDisplayName", None)
     return record
 
 
@@ -454,7 +464,12 @@ def save_report(report: CareerBlueprintReport) -> None:
 def find_report(report_id: str) -> CareerBlueprintReport | None:
     with _connect() as connection:
         row = connection.execute(
-            "SELECT data FROM reports WHERE id = %s",
+            """
+            SELECT reports.data, users.display_name
+            FROM reports
+            LEFT JOIN users ON users.id = reports.user_id
+            WHERE reports.id = %s
+            """,
             (report_id,),
         ).fetchone()
     if not row:
@@ -467,6 +482,7 @@ def find_report(report_id: str) -> CareerBlueprintReport | None:
         "response": response.model_dump(mode="json") if response else None,
         "profile": profile.model_dump(mode="json") if profile else None,
     }
+    record["accountDisplayName"] = row["display_name"] or None
     return CareerBlueprintReport.model_validate(record)
 
 

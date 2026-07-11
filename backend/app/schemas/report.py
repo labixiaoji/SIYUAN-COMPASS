@@ -23,6 +23,7 @@ class CareerBlueprintReport(BaseModel):
     updatedAt: str
     editedAt: Optional[str] = None
     editedBy: Optional[str] = None
+    accountDisplayName: Optional[str] = None
 
 
 class AdminReportUpdate(BaseModel):

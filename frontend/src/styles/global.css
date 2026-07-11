@@ -396,6 +396,25 @@ select {
   padding: 12px;
 }
 
+.password-panel h2 {
+  margin-top: 0;
+}
+
+.password-panel .field {
+  margin-bottom: 16px;
+}
+
+.password-panel .success,
+.password-panel .error {
+  margin-bottom: 16px;
+  margin-top: 0;
+}
+
+.password-submit {
+  justify-content: center;
+  width: 100%;
+}
+
 .dev-tools-panel {
   align-items: center;
   background: #f5fbf9;
@@ -421,6 +440,15 @@ select {
 
 .admin-records {
   margin-top: 24px;
+}
+
+.admin-record-card {
+  scroll-margin-top: 88px;
+}
+
+.admin-record-card:target {
+  border-color: #e5a26c;
+  box-shadow: 0 0 0 3px rgba(229, 162, 108, 0.2);
 }
 
 .admin-records > .admin-section-head {
