@@ -41,8 +41,7 @@ const sections: SectionSpec[] = [
     title: "基本信息",
     fields: [
       { label: "姓名", value: (item) => item.studentName },
-      { label: "学校", value: (item) => item.school },
-      { label: "学号 / 编号", value: (item) => item.studentNumber },
+      { label: "学号", value: (item) => item.studentNumber },
       { label: "联系方式", value: (item) => item.contactInfo },
       { label: "学历阶段", value: (item) => item.educationStage },
       { label: "年级", value: (item) => item.grade },
@@ -60,8 +59,9 @@ const sections: SectionSpec[] = [
       { label: "硕士毕业考虑", value: (item) => item.phdIntention },
       { label: "读博计划", value: (item) => item.phdPlan },
       { label: "博士后发展方向", value: (item) => item.doctoralCareerDirection },
+      { label: "其他博士发展方向", value: (item) => item.doctoralCareerOther },
       { label: "教育路径原因", value: (item) => item.educationPathReasons },
-      { label: "教育路径确定度", value: (item) => `${item.educationCertainty} / 5` }
+      { label: "其他教育路径原因", value: (item) => item.educationPathReasonOther }
     ]
   },
   {
@@ -102,8 +102,6 @@ const sections: SectionSpec[] = [
     fields: [
       { label: "GPA", value: (item) => [item.currentGpa, item.gpaScale].filter(Boolean).join(" / ") },
       { label: "专业排名", value: (item) => [item.majorRank, item.majorTotal].filter(Boolean).join(" / ") },
-      { label: "英语证书", value: (item) => item.englishCertificates },
-      { label: "学术 / 项目经历", value: (item) => item.academicExperiences },
       { label: "挂科或重修", value: (item) => item.failedCourseStatus },
       { label: "第二专业", value: (item) => item.hasSecondMajor },
       { label: "第二专业名称", value: (item) => item.secondMajorName },
@@ -114,6 +112,7 @@ const sections: SectionSpec[] = [
       { label: "转专业原因", value: (item) => item.transferReason },
       { label: "原专业保留能力", value: (item) => item.originalMajorRetainedSkills },
       { label: "当前准备", value: (item) => item.currentPreparations },
+      { label: "其他已做准备", value: (item) => item.currentPreparationOther },
       { label: "准备详情", value: (item) => item.preparationDetails }
     ]
   },
@@ -123,7 +122,8 @@ const sections: SectionSpec[] = [
       { label: "目前最缺资源", value: (item) => item.missingResources },
       { label: "本专业去向了解", value: (item) => item.majorOutcomeAwareness },
       { label: "目标岗位了解", value: (item) => item.targetJobAwareness },
-      { label: "信息渠道", value: (item) => item.jobInfoChannels }
+      { label: "信息渠道", value: (item) => item.jobInfoChannels },
+      { label: "其他信息渠道", value: (item) => item.jobInfoChannelOther }
     ]
   },
   {
@@ -133,9 +133,7 @@ const sections: SectionSpec[] = [
       { label: "运动频率", value: (item) => item.exerciseFrequency },
       { label: "长期坚持度", value: (item) => `${item.longTermPersistence} / 5` },
       { label: "执行风格", value: (item) => item.executionStyle },
-      { label: "执行案例", value: (item) => item.executionCase },
       { label: "失败恢复时间", value: (item) => item.failureRecoveryTime },
-      { label: "负面反馈反应", value: (item) => item.negativeFeedbackReaction },
       { label: "自我怀疑频率", value: (item) => item.selfDoubtFrequency },
       { label: "问题解决方式", value: (item) => item.problemSolvingStyle },
       { label: "支持需要", value: (item) => item.supportNeed },
@@ -148,6 +146,7 @@ const sections: SectionSpec[] = [
     title: "核心困惑",
     fields: [
       { label: "当前生涯困惑", value: (item) => item.careerConfusions },
+      { label: "其他生涯困惑", value: (item) => item.careerConfusionOther },
       { label: "一句话困惑", value: (item) => item.mainConfusionText }
     ]
   }
@@ -177,7 +176,7 @@ export function AdminAssessmentPage() {
     <main className="shell page">
       <div className="page-title">
         <h1>学生问卷内容</h1>
-        <p>{assessment.studentName || "未知学生"} · {assessment.school || "-"} · {assessment.educationStage || "-"} {assessment.grade || "-"}</p>
+        <p>{assessment.studentName || "未知学生"} · {assessment.educationStage || "-"} {assessment.grade || "-"}</p>
       </div>
 
       <section className="assessment-reader">

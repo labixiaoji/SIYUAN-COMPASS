@@ -12,10 +12,26 @@ PROFILE_PROMPT_VERSION = "profile-analysis-v1.6.0"
 def build_profile_messages(response: AssessmentResponse, retry_reason: str | None = None) -> list[dict[str, str]]:
     response_payload = response.model_dump(mode="json")
     response_payload.pop("studentName", None)
+    response_payload.pop("school", None)
     response_payload.pop("studentNumber", None)
     response_payload.pop("contactInfo", None)
     response_payload.pop("fiveYearIncome", None)
     response_payload.pop("tenYearIncome", None)
+    response_payload.pop("educationCertainty", None)
+    response_payload.pop("englishCertificates", None)
+    response_payload.pop("academicExperiences", None)
+    response_payload.pop("executionCase", None)
+    response_payload.pop("negativeFeedbackReaction", None)
+    if response.doctoralCareerDirection != "其他发展方向":
+        response_payload.pop("doctoralCareerOther", None)
+    if "其他" not in response.educationPathReasons:
+        response_payload.pop("educationPathReasonOther", None)
+    if "其他" not in response.currentPreparations:
+        response_payload.pop("currentPreparationOther", None)
+    if "其他" not in response.jobInfoChannels:
+        response_payload.pop("jobInfoChannelOther", None)
+    if "其他" not in response.careerConfusions:
+        response_payload.pop("careerConfusionOther", None)
     response_json = json.dumps(
         response_payload,
         ensure_ascii=False,
@@ -54,9 +70,9 @@ def build_profile_messages(response: AssessmentResponse, retry_reason: str | Non
 1. 先识别客观事实和已经发生的行为证据。
 2. 再识别动机、价值排序、教育意愿和5—10年愿景。
 3. 根据educationStage判断本科、硕士、博士问题的适用范围；不要对博士生继续分析读硕/读博问题，也不要对本科生套用博士生出口问题。
-4. 对每项自评能力、兴趣、他人称赞特质，查找行为证据；有成果、项目、竞赛、科研、实习或具体案例佐证才可进入verifiedStrengths，否则只能进入potentialStrengths。
-5. 结合GPA、排名、英语、科研竞赛论文、挂科重修、二专、转专业和准备细节，判断升学、学术、就业、跨专业或复合路径可行性；信息缺失时必须标为信息缺口，不得推测。
-6. 交叉检查教育意向、具体规划、确定度、目标岗位学历要求、科研兴趣、执行力、抗压、高强度承受和职业风险偏好，分别评估升学、就业、出国、体制内、企业研发等路径。
+4. 对每项自评能力、兴趣、他人称赞特质，查找行为证据；有成果、项目、竞赛、科研、实习或准备细节佐证才可进入verifiedStrengths，否则只能进入potentialStrengths。
+5. 结合GPA、排名、挂科重修、二专、转专业和准备细节，判断升学、学术、就业、跨专业或复合路径可行性；信息缺失时必须标为信息缺口，不得推测。
+6. 交叉检查教育意向、具体规划、目标岗位学历要求、科研兴趣、执行力、抗压、高强度承受和职业风险偏好，分别评估升学、就业、出国、体制内、企业研发等路径。
 7. 检查目标城市、行业、岗位、家庭、生活安排、技能、健康精力和风险偏好之间是否一致。
 8. 主动查找意愿与行动、目标与资源、5年与10年、价值偏好、风险偏好、执行力之间的矛盾。矛盾不是错误，需说明含义和验证行动。
 9. 根据证据强度生成Plan A、Plan B与Plan C。Plan A是主攻路径，Plan B是备选路径，两条路径必须可切换，写清下一步和切换条件；Plan C是系统建议路径，必须跳出学生原有设定，基于优势、兴趣、限制、风险和信息缺口提出第三条值得探索的方向；第二专业或原专业能力可作为备选路径依据，但不能无证据夸大。

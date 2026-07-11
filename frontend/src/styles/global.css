@@ -240,6 +240,14 @@ select {
   margin-left: 4px;
 }
 
+.question-flags {
+  color: var(--danger);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.5;
+  margin: -4px 0 10px;
+}
+
 .field-invalid .input,
 .field-invalid .textarea,
 .field-invalid .select,

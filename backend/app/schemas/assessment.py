@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class AbilityScores(BaseModel):
@@ -36,8 +36,10 @@ class AssessmentResponseInput(BaseModel):
     phdIntention: str
     phdPlan: Optional[str] = None
     doctoralCareerDirection: str = ""
+    doctoralCareerOther: Optional[str] = None
     educationPathReasons: list[str]
-    educationCertainty: int = Field(ge=1, le=5)
+    educationPathReasonOther: Optional[str] = None
+    educationCertainty: int = Field(default=3, ge=1, le=5)
     fiveYearCity: str
     fiveYearIncome: str
     fiveYearIndustry: str
@@ -75,13 +77,15 @@ class AssessmentResponseInput(BaseModel):
     immersiveActivities: Optional[str] = None
     favoriteKnowledgeAreas: Optional[str] = None
     selfDrivenActivities: Optional[str] = None
-    preferredWorkStyle: str = ""
+    preferredWorkStyle: list[str] = Field(default_factory=list)
     currentPreparations: list[str]
+    currentPreparationOther: Optional[str] = None
     preparationDetails: Optional[str] = None
     missingResources: list[str]
     majorOutcomeAwareness: str
     targetJobAwareness: str
     jobInfoChannels: list[str]
+    jobInfoChannelOther: Optional[str] = None
     healthEnergyStatus: str
     exerciseFrequency: Optional[str] = None
     longTermPersistence: int = Field(default=3, ge=1, le=5)
@@ -96,8 +100,16 @@ class AssessmentResponseInput(BaseModel):
     routineWorkTolerance: str = ""
     careerRiskPreference: str = ""
     careerConfusions: list[str]
+    careerConfusionOther: Optional[str] = None
     mainConfusionText: Optional[str] = None
     userId: Optional[str] = None
+
+    @field_validator("preferredWorkStyle", mode="before")
+    @classmethod
+    def normalize_preferred_work_style(cls, value):
+        if isinstance(value, str):
+            return [value] if value.strip() else []
+        return value
 
 
 class AssessmentResponse(AssessmentResponseInput):

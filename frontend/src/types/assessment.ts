@@ -16,7 +16,7 @@ export type InterestScores = {
 
 export type AssessmentResponseInput = {
   studentName: string;
-  school: string;
+  school?: string;
   studentNumber: string;
   contactInfo: string;
   educationStage: string;
@@ -29,8 +29,9 @@ export type AssessmentResponseInput = {
   phdIntention: string;
   phdPlan?: string;
   doctoralCareerDirection: string;
+  doctoralCareerOther?: string;
   educationPathReasons: string[];
-  educationCertainty: number;
+  educationPathReasonOther?: string;
   fiveYearCity: string;
   fiveYearIncome: string;
   fiveYearIndustry: string;
@@ -68,13 +69,15 @@ export type AssessmentResponseInput = {
   immersiveActivities?: string;
   favoriteKnowledgeAreas?: string;
   selfDrivenActivities?: string;
-  preferredWorkStyle: string;
+  preferredWorkStyle: string[];
   currentPreparations: string[];
+  currentPreparationOther?: string;
   preparationDetails?: string;
   missingResources: string[];
   majorOutcomeAwareness: string;
   targetJobAwareness: string;
   jobInfoChannels: string[];
+  jobInfoChannelOther?: string;
   healthEnergyStatus: string;
   exerciseFrequency?: string;
   longTermPersistence: number;
@@ -89,6 +92,7 @@ export type AssessmentResponseInput = {
   routineWorkTolerance: string;
   careerRiskPreference: string;
   careerConfusions: string[];
+  careerConfusionOther?: string;
   mainConfusionText?: string;
 };
 

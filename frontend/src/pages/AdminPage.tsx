@@ -157,7 +157,6 @@ export function AdminPage() {
                     <div className="admin-record-block">
                       <span className="admin-block-label">问卷内容</span>
                       <strong>{record.assessment.educationStage || "-"} · {record.assessment.grade || "-"}</strong>
-                      <p>学校：{record.student.school || "-"}</p>
                       <p>专业：{record.assessment.collegeMajor || "-"}</p>
                       <Link className="button secondary admin-block-button" to={`/admin/assessments/${record.report.responseId}`}>
                         查看完整问卷

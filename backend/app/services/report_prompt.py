@@ -94,7 +94,7 @@ def build_report_messages(response: AssessmentResponse, profile: CareerProfile) 
 - 不复述整份问卷，不使用“你一定”“你必须”“唯一选择”等绝对表达。
 - 同一事实或建议最多出现一次；优先给出结论、依据和行动，删除铺垫、泛泛鼓励及重复解释。
 - 不分析、不预测也不评价薪资、收入区间、收入目标是否现实或购房能力；报告正文不得出现具体薪资判断。
-- 不输出学生姓名、学号、联系方式；学校信息只可作为资源环境背景轻描淡写使用，不能据此臆测学校层次、政策或机会。
+- 不输出学生姓名、学号、联系方式。
 - 优先使用结构化画像中的结论、证据、反证与置信度。低置信度结论必须使用“可能”“有待验证”等表达。
 - 已验证优势和潜在优势必须严格区分；不得把potentialStrengths写成已经具备的成熟能力。
 - Plan A和Plan B必须沿用结构化画像给出的方向，只能补充表达和执行细节，不能擅自交换或另造路径。
@@ -105,18 +105,16 @@ def build_report_messages(response: AssessmentResponse, profile: CareerProfile) 
 - 学历阶段：{response.educationStage or "未填写"}
 - 年级：{response.grade}
 - 性别：{response.gender}
-- 学校：{response.school or "未填写"}
 - 专业：{response.collegeMajor}
 - 家乡或成长地：{response.hometown or "未填写"}
-- 当前困惑：{_list(response.careerConfusions)}
+- 当前困惑：{_list(response.careerConfusions)}；其他困惑={response.careerConfusionOther or "无"}
 - 主要困惑描述：{response.mainConfusionText or "未填写"}
 - 读硕士意向：{response.mastersIntention}
 - 硕士规划：{response.mastersPlan or "未填写"}
 - 读博士意向：{response.phdIntention}
 - 博士规划：{response.phdPlan or "未填写"}
-- 博士后续发展方向：{response.doctoralCareerDirection or "不适用"}
-- 教育路径原因：{_list(response.educationPathReasons)}
-- 路径确定程度：{response.educationCertainty}/5
+- 博士后续发展方向：{response.doctoralCareerDirection or "不适用"}；其他方向={response.doctoralCareerOther or "无"}
+- 教育路径原因：{_list(response.educationPathReasons)}；其他原因={response.educationPathReasonOther or "无"}
 - 五年愿景：城市={response.fiveYearCity}；行业={response.fiveYearIndustry}；岗位/角色={response.fiveYearRole}
 - 五年生活：家庭状态={response.fiveYearFamilyStatus}；住房={response.fiveYearHousingPlan}；爱好与核心技能={response.fiveYearHobbiesSkills}
 - 十年愿景：城市={response.tenYearCity}；行业={response.tenYearIndustry}；岗位/角色={response.tenYearRole}
@@ -124,24 +122,23 @@ def build_report_messages(response: AssessmentResponse, profile: CareerProfile) 
 - 价值观前三项：{_list(response.topValuesRanked)}
 - 能力自评：逻辑={response.abilityScores.logic}/5；表达={response.abilityScores.expression}/5；空间设计={response.abilityScores.spatialDesign}/5；人际理解={response.abilityScores.interpersonal}/5
 - 兴趣倾向：动手={response.interestScores.handsOn}/5；研究={response.interestScores.research}/5；创作={response.interestScores.creation}/5；助人={response.interestScores.helping}/5；领导影响={response.interestScores.leadership}/5；规则细节={response.interestScores.detail}/5
-- 学业竞争力：GPA={response.currentGpa or "未填写"} / {response.gpaScale or "未填写"}；排名={response.majorRank or "未填写"} / {response.majorTotal or "未填写"}；英语={response.englishCertificates or "未填写"}；挂科重修={response.failedCourseStatus or "未填写"}
-- 科研竞赛论文项目：{response.academicExperiences or "未填写"}
+- 学业竞争力：GPA={response.currentGpa or "未填写"} / {response.gpaScale or "未填写"}；排名={response.majorRank or "未填写"} / {response.majorTotal or "未填写"}；挂科重修={response.failedCourseStatus or "未填写"}
 - 第二专业：{response.hasSecondMajor or "未填写"}；名称={response.secondMajorName or "未填写"}；程度={response.secondMajorProgress or "未填写"}；职业相关意愿={response.secondMajorCareerInterest or "未填写"}
 - 转专业：{response.hasTransferredMajor or "未填写"}；原专业={response.originalMajorName or "未填写"}；原因={response.transferReason or "未填写"}；原专业能力保留={response.originalMajorRetainedSkills or "未填写"}
 - 常被称赞的特质：{_list(response.praisedTraits)}
 - 特质成果证据：{response.traitEvidence or "未填写"}
-- 兴趣探索：沉浸活动={response.immersiveActivities or "未填写"}；喜欢知识={response.favoriteKnowledgeAreas or "未填写"}；无奖励也愿意做={response.selfDrivenActivities or "未填写"}；偏好工作方式={response.preferredWorkStyle or "未填写"}
-- 已有准备：{_list(response.currentPreparations)}
+- 兴趣探索：沉浸活动={response.immersiveActivities or "未填写"}；喜欢知识={response.favoriteKnowledgeAreas or "未填写"}；无奖励也愿意做={response.selfDrivenActivities or "未填写"}；偏好工作方式={_list(response.preferredWorkStyle)}
+- 已有准备：{_list(response.currentPreparations)}；其他准备={response.currentPreparationOther or "无"}
 - 准备细节：{response.preparationDetails or "未填写"}
 - 缺少资源：{_list(response.missingResources)}
 - 专业去向认知：{response.majorOutcomeAwareness}
 - 岗位认知：{response.targetJobAwareness}
-- 信息渠道：{_list(response.jobInfoChannels)}
+- 信息渠道：{_list(response.jobInfoChannels)}；其他渠道={response.jobInfoChannelOther or "无"}
 - 健康精力：{response.healthEnergyStatus}
 - 运动情况：{response.exerciseFrequency or "未填写"}
 - 长期坚持能力：{response.longTermPersistence}/5
-- 执行力：{response.executionStyle or "未填写"}；案例={response.executionCase or "未填写"}
-- 抗压恢复：失败恢复={response.failureRecoveryTime or "未填写"}；负面评价反应={response.negativeFeedbackReaction or "未填写"}；自我怀疑={response.selfDoubtFrequency or "未填写"}；解决问题方式={response.problemSolvingStyle or "未填写"}；需要支持={response.supportNeed or "未填写"}
+- 执行力：{response.executionStyle or "未填写"}
+- 抗压恢复：失败恢复={response.failureRecoveryTime or "未填写"}；自我怀疑={response.selfDoubtFrequency or "未填写"}；解决问题方式={response.problemSolvingStyle or "未填写"}；需要支持={response.supportNeed or "未填写"}
 - 工作承受：高强度经历={response.highIntensityExperience or "未填写"}；事务性工作接受={response.routineWorkTolerance or "未填写"}；职业风险偏好={response.careerRiskPreference or "未填写"}
 
 结构化画像分析：

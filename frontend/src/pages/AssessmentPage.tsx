@@ -55,7 +55,6 @@ const prefillKey = "siyuan_assessment_prefill_v1";
 
 const initialForm: AssessmentResponseInput = {
   studentName: "",
-  school: "",
   studentNumber: "",
   contactInfo: "",
   educationStage: "本科",
@@ -68,8 +67,9 @@ const initialForm: AssessmentResponseInput = {
   phdIntention: "暂不适用",
   phdPlan: "",
   doctoralCareerDirection: "",
+  doctoralCareerOther: "",
   educationPathReasons: [],
-  educationCertainty: 3,
+  educationPathReasonOther: "",
   fiveYearCity: "",
   fiveYearIncome: "",
   fiveYearIndustry: "",
@@ -91,8 +91,6 @@ const initialForm: AssessmentResponseInput = {
   gpaScale: "",
   majorRank: "",
   majorTotal: "",
-  englishCertificates: "",
-  academicExperiences: "",
   failedCourseStatus: "没有挂科或重修",
   hasSecondMajor: "没有修读",
   secondMajorName: "",
@@ -107,20 +105,20 @@ const initialForm: AssessmentResponseInput = {
   immersiveActivities: "",
   favoriteKnowledgeAreas: "",
   selfDrivenActivities: "",
-  preferredWorkStyle: "分析问题",
+  preferredWorkStyle: [],
   currentPreparations: [],
+  currentPreparationOther: "",
   preparationDetails: "",
   missingResources: [],
   majorOutcomeAwareness: "听说过一些",
   targetJobAwareness: "只知道大概方向",
   jobInfoChannels: [],
+  jobInfoChannelOther: "",
   healthEnergyStatus: "一般，偶尔运动",
   exerciseFrequency: "",
   longTermPersistence: 3,
   executionStyle: "执行力一般，重要事情能够推进，但容易受状态影响",
-  executionCase: "",
   failureRecoveryTime: "需要几天恢复",
-  negativeFeedbackReaction: "",
   selfDoubtFrequency: "遇到挫折时明显自我怀疑",
   problemSolvingStyle: "会先观察，再尝试解决",
   supportNeed: "需要朋友或同学交流后恢复",
@@ -128,13 +126,13 @@ const initialForm: AssessmentResponseInput = {
   routineWorkTolerance: "短期可以接受",
   careerRiskPreference: "较为宽松，发展更多取决于个人能力与行业环境，但有失业风险",
   careerConfusions: [],
+  careerConfusionOther: "",
   mainConfusionText: ""
 };
 
 const testForm: AssessmentResponseInput = {
   ...initialForm,
   studentName: "测试学生",
-  school: "思源大学",
   studentNumber: "DEV-20260704",
   contactInfo: "dev@example.com",
   educationStage: "本科",
@@ -147,8 +145,9 @@ const testForm: AssessmentResponseInput = {
   phdIntention: "暂不适用",
   phdPlan: "",
   doctoralCareerDirection: "",
+  doctoralCareerOther: "",
   educationPathReasons: ["提升学历和平台", "目标职业需要更高学历", "还没有想清楚，只是暂时倾向"],
-  educationCertainty: 3,
+  educationPathReasonOther: "",
   fiveYearCity: "上海或杭州",
   fiveYearIncome: "希望收入能覆盖基本生活并保持一定储蓄",
   fiveYearIndustry: "互联网产品技术、企业数字化或教育科技",
@@ -170,8 +169,6 @@ const testForm: AssessmentResponseInput = {
   gpaScale: "4.0",
   majorRank: "18",
   majorTotal: "120",
-  englishCertificates: "大学英语六级 520",
-  academicExperiences: "参加过一次校级数据分析竞赛，负责需求拆解和可视化展示；做过课程项目，用 React 和 FastAPI 完成一个小型管理系统。",
   failedCourseStatus: "没有挂科或重修",
   hasSecondMajor: "没有修读",
   secondMajorName: "",
@@ -186,20 +183,20 @@ const testForm: AssessmentResponseInput = {
   immersiveActivities: "长时间整理资料、分析一个产品为什么好用，以及把复杂问题写成清楚的文档。",
   favoriteKnowledgeAreas: "产品设计、数据分析、AI 应用、教育科技和组织协作。",
   selfDrivenActivities: "会主动体验新工具，整理笔记，也会帮同学把项目思路梳理清楚。",
-  preferredWorkStyle: "分析问题",
+  preferredWorkStyle: ["分析问题", "创作表达"],
   currentPreparations: ["修读相关课程", "做过项目作品", "参加竞赛", "看过目标岗位招聘要求", "准备过简历"],
+  currentPreparationOther: "",
   preparationDetails: "已经修过数据库、软件工程和数据分析课程；看过产品经理和数据分析岗位 JD，发现自己还缺实习经历和更完整的作品集。",
   missingResources: ["不知道真实岗位要求", "缺项目 / 实习经历", "缺清晰计划"],
   majorOutcomeAwareness: "听说过一些",
   targetJobAwareness: "有一点了解",
   jobInfoChannels: ["校友、老师、同学或其他熟人", "招聘网站", "宣讲会"],
+  jobInfoChannelOther: "",
   healthEnergyStatus: "一般，偶尔运动",
   exerciseFrequency: "每周 1-2 次，每次 30 分钟，主要是慢跑和散步。",
   longTermPersistence: 4,
   executionStyle: "执行力一般，重要事情能够推进，但容易受状态影响",
-  executionCase: "上学期坚持三周完成课程项目，但中途因为任务拆分不清晰拖延过，后来用待办清单重新推进。",
   failureRecoveryTime: "需要几天恢复",
-  negativeFeedbackReaction: "一开始会有点沮丧，之后会想知道对方具体不满意哪里，再决定要不要调整。",
   selfDoubtFrequency: "遇到挫折时明显自我怀疑",
   problemSolvingStyle: "会先观察，再尝试解决",
   supportNeed: "需要朋友或同学交流后恢复",
@@ -207,6 +204,7 @@ const testForm: AssessmentResponseInput = {
   routineWorkTolerance: "短期可以接受",
   careerRiskPreference: "较为宽松，发展更多取决于个人能力与行业环境，但有失业风险",
   careerConfusions: ["纠结就业、读研、出国、读博", "不确定自己适合哪个行业", "想提高求职 / 实习竞争力"],
+  careerConfusionOther: "",
   mainConfusionText: "我不知道应该继续考研提升学历，还是尽早找实习进入产品或数据相关岗位。"
 };
 
@@ -220,18 +218,18 @@ const requiredFields: Array<{
   message: string;
   validate?: (form: AssessmentResponseInput) => boolean;
 }> = [
-  { key: "studentName", step: 0, message: "请填写姓名" },
-  { key: "school", step: 0, message: "请填写学校" },
-  { key: "studentNumber", step: 0, message: "请填写学号" },
   { key: "contactInfo", step: 0, message: "请填写联系方式" },
   { key: "educationStage", step: 0, message: "请选择学历阶段" },
   { key: "grade", step: 0, message: "请选择年级" },
   { key: "gender", step: 0, message: "请选择性别" },
   { key: "collegeMajor", step: 0, message: "请填写学院和专业" },
+  { key: "hometown", step: 0, message: "请填写家乡或主要成长地" },
   { key: "mastersIntention", step: 1, message: "请选择本科毕业后的主要计划", validate: (form) => form.educationStage !== "本科" || hasText(form.mastersIntention) },
   { key: "phdIntention", step: 1, message: "请选择硕士毕业后的主要考虑", validate: (form) => form.educationStage !== "硕士" || hasText(form.phdIntention) },
   { key: "doctoralCareerDirection", step: 1, message: "请选择博士阶段后的发展方向", validate: (form) => form.educationStage !== "博士" || hasText(form.doctoralCareerDirection) },
-  { key: "educationPathReasons", step: 1, message: "请至少选择1项教育路径原因", validate: (form) => form.educationPathReasons.length > 0 },
+  { key: "doctoralCareerOther", step: 1, message: "请填写其他发展方向", validate: (form) => form.doctoralCareerDirection !== "其他发展方向" || hasText(form.doctoralCareerOther) },
+  { key: "educationPathReasons", step: 1, message: "请选择1—3项教育路径原因", validate: (form) => form.educationPathReasons.length > 0 && form.educationPathReasons.length <= 3 },
+  { key: "educationPathReasonOther", step: 1, message: "请填写其他教育路径原因", validate: (form) => !form.educationPathReasons.includes("其他") || hasText(form.educationPathReasonOther) },
   { key: "fiveYearCity", step: 2, message: "请填写5年后希望生活或工作的城市" },
   { key: "fiveYearIncome", step: 2, message: "请填写5年后希望达到的收入状态" },
   { key: "fiveYearIndustry", step: 2, message: "请填写5年后希望进入或深耕的行业领域" },
@@ -248,15 +246,22 @@ const requiredFields: Array<{
   { key: "tenYearHobbiesSkills", step: 2, message: "请填写10年后希望保留的爱好或核心技能" },
   { key: "topValuesRanked", step: 3, message: "请选出最看重的3项价值观", validate: (form) => form.topValuesRanked.length === 3 },
   { key: "praisedTraits", step: 3, message: "请至少选择1项常被称赞的特质", validate: (form) => form.praisedTraits.length > 0 && form.praisedTraits.length <= 4 },
-  { key: "preferredWorkStyle", step: 3, message: "请选择更偏好的工作方式" },
+  { key: "traitEvidence", step: 3, message: "请填写特质相关成果" },
+  { key: "immersiveActivities", step: 3, message: "请填写能让你长时间沉浸的事情" },
+  { key: "favoriteKnowledgeAreas", step: 3, message: "请填写喜欢学习的知识领域" },
+  { key: "selfDrivenActivities", step: 3, message: "请填写无外部奖励也愿意完成的事情" },
+  { key: "preferredWorkStyle", step: 3, message: "请选择1—2项更偏好的工作方式", validate: (form) => form.preferredWorkStyle.length > 0 && form.preferredWorkStyle.length <= 2 },
   { key: "failedCourseStatus", step: 4, message: "请选择是否有挂科或重修经历" },
   { key: "hasSecondMajor", step: 4, message: "请选择是否修读第二专业" },
   { key: "hasTransferredMajor", step: 4, message: "请选择是否有转专业经历" },
   { key: "currentPreparations", step: 4, message: "请至少选择1项已做准备", validate: (form) => form.currentPreparations.length > 0 },
+  { key: "currentPreparationOther", step: 4, message: "请填写其他已做准备", validate: (form) => !form.currentPreparations.includes("其他") || hasText(form.currentPreparationOther) },
+  { key: "preparationDetails", step: 4, message: "请具体展开说说已做的准备" },
   { key: "missingResources", step: 5, message: "请至少选择1项目前最缺的资源", validate: (form) => form.missingResources.length > 0 && form.missingResources.length <= 3 },
   { key: "majorOutcomeAwareness", step: 5, message: "请选择是否了解本专业毕业生去向" },
   { key: "targetJobAwareness", step: 5, message: "请选择是否了解心仪岗位要求" },
   { key: "jobInfoChannels", step: 5, message: "请至少选择1个职业或招聘信息渠道", validate: (form) => form.jobInfoChannels.length > 0 },
+  { key: "jobInfoChannelOther", step: 5, message: "请填写其他职业信息渠道", validate: (form) => !form.jobInfoChannels.includes("其他") || hasText(form.jobInfoChannelOther) },
   { key: "healthEnergyStatus", step: 5, message: "请选择身体健康和精力状态" },
   { key: "executionStyle", step: 5, message: "请选择执行力自评" },
   { key: "failureRecoveryTime", step: 5, message: "请选择失败后的恢复速度" },
@@ -266,7 +271,8 @@ const requiredFields: Array<{
   { key: "highIntensityExperience", step: 5, message: "请选择高强度投入经历" },
   { key: "routineWorkTolerance", step: 5, message: "请选择事务性工作的接受程度" },
   { key: "careerRiskPreference", step: 5, message: "请选择职业风险偏好" },
-  { key: "careerConfusions", step: 6, message: "请至少选择1项当前生涯困惑", validate: (form) => form.careerConfusions.length > 0 && form.careerConfusions.length <= 3 }
+  { key: "careerConfusions", step: 6, message: "请至少选择1项当前生涯困惑", validate: (form) => form.careerConfusions.length > 0 && form.careerConfusions.length <= 3 },
+  { key: "careerConfusionOther", step: 6, message: "请填写其他生涯困惑", validate: (form) => !form.careerConfusions.includes("其他") || hasText(form.careerConfusionOther) }
 ];
 
 const requiredFieldKeys = new Set<FieldKey>(requiredFields.map((field) => field.key));
@@ -301,6 +307,12 @@ function formFromPartial(raw: AssessmentPrefill): AssessmentResponseInput {
     ...initialForm.interestScores,
     ...(typeof raw.interestScores === "object" && raw.interestScores ? raw.interestScores : {})
   };
+  const rawPreferredWorkStyle = raw.preferredWorkStyle as unknown;
+  next.preferredWorkStyle = Array.isArray(rawPreferredWorkStyle)
+    ? rawPreferredWorkStyle.filter((item): item is string => typeof item === "string").slice(0, 2)
+    : typeof rawPreferredWorkStyle === "string" && rawPreferredWorkStyle.trim()
+      ? [rawPreferredWorkStyle]
+      : [];
   return next;
 }
 
@@ -485,7 +497,8 @@ export function AssessmentPage() {
       mastersPlan: educationStage === "本科" ? prev.mastersPlan : "",
       phdIntention: educationStage === "硕士" ? (masterPathOptions.includes(prev.phdIntention) ? prev.phdIntention : "尚未确定") : educationStage === "博士" ? "已在读博士，不适用" : "暂不适用",
       phdPlan: educationStage === "硕士" || educationStage === "博士" ? prev.phdPlan : "",
-      doctoralCareerDirection: educationStage === "博士" ? prev.doctoralCareerDirection || doctoralCareerOptions[0] : ""
+      doctoralCareerDirection: educationStage === "博士" ? prev.doctoralCareerDirection || doctoralCareerOptions[0] : "",
+      doctoralCareerOther: educationStage === "博士" ? prev.doctoralCareerOther : ""
     }));
     setFieldErrors((prev) => {
       const next = { ...prev };
@@ -549,6 +562,15 @@ export function AssessmentPage() {
     );
   }
 
+  function questionFlags(key: FieldKey, multiple = false, max?: number) {
+    const flags = [
+      requiredFieldKeys.has(key) ? "必填" : "",
+      multiple ? "多选" : "",
+      max ? `最多选择 ${max} 项` : ""
+    ].filter(Boolean);
+    return flags.length > 0 ? <div className="question-flags">{flags.join("｜")}</div> : null;
+  }
+
   const textField = (
     key: keyof AssessmentResponseInput,
     label: string,
@@ -557,6 +579,7 @@ export function AssessmentPage() {
   ) => (
     <div className={fieldClass(key)} data-field={key}>
       <label>{requiredLabel(key, label)}</label>
+      {questionFlags(key)}
       {multiline ? (
         <textarea
           className="textarea"
@@ -579,6 +602,7 @@ export function AssessmentPage() {
   const radioField = (key: FieldKey, label: string, options: string[], hint = "") => (
     <div className={fieldClass(key)} data-field={key}>
       <label>{requiredLabel(key, label)}</label>
+      {questionFlags(key)}
       {hint && <div className="hint">{hint}</div>}
       <RadioGroup options={options} value={(form[key] as string | undefined) || ""} onChange={(value) => patch(key, value as never)} />
       {fieldError(key)}
@@ -588,6 +612,7 @@ export function AssessmentPage() {
   const choiceField = (key: FieldKey, label: string, options: string[], hint = "", max?: number) => (
     <div className={fieldClass(key)} data-field={key}>
       <label>{requiredLabel(key, label)}</label>
+      {questionFlags(key, true, max)}
       {hint && <div className="hint">{hint}</div>}
       <ChoiceGroup options={options} values={(form[key] as string[] | undefined) || []} max={max} onChange={(value) => patch(key, value as never)} />
       {fieldError(key)}
@@ -631,22 +656,24 @@ export function AssessmentPage() {
           {step === 0 && (
             <>
               <p className="hint">以下信息仅用于报告归属、测试回访和系统优化，不会用于公开展示。</p>
-              {textField("studentName", "你的姓名是？", false, "例如：张同学")}
-              {textField("school", "你的学校是？", false, "例如：上海交通大学")}
-              {textField("studentNumber", "你的学号是？", false, "用于区分同名学生")}
+              {textField("studentName", "你的姓名是？（选填）", false, "例如：张同学")}
+              {textField("studentNumber", "你的学号是？（选填）", false, "用于区分同名学生")}
               {textField("contactInfo", "你的联系方式是？", false, "手机号、邮箱或微信号均可")}
               <div className={fieldClass("educationStage")} data-field="educationStage">
                 <label>{requiredLabel("educationStage", "你当前的学历阶段是？")}</label>
+                {questionFlags("educationStage")}
                 <RadioGroup options={educationStageOptions} value={form.educationStage} onChange={patchEducationStage} />
                 {fieldError("educationStage")}
               </div>
               <div className={fieldClass("grade")} data-field="grade">
                 <label>{requiredLabel("grade", "你的年级是？")}</label>
+                {questionFlags("grade")}
                 <RadioGroup options={currentGradeOptions} value={form.grade} onChange={(value) => patch("grade", value)} />
                 {fieldError("grade")}
               </div>
               <div className={fieldClass("gender")} data-field="gender">
                 <label>{requiredLabel("gender", "你的性别是？")}</label>
+                {questionFlags("gender")}
                 <RadioGroup options={genderOptions} value={form.gender} onChange={(value) => patch("gender", value)} />
                 {fieldError("gender")}
               </div>
@@ -672,19 +699,17 @@ export function AssessmentPage() {
               {form.educationStage === "博士" && (
                 <>
                   {radioField("doctoralCareerDirection", "博士阶段后的主要发展方向是？", doctoralCareerOptions)}
+                  {form.doctoralCareerDirection === "其他发展方向" && textField("doctoralCareerOther", "请填写其他发展方向")}
                   {textField("phdPlan", "围绕这个方向，你目前有什么初步规划？", true, "可填写研究方向、目标单位、博士后、企业研发、考公考编或其他准备情况")}
                 </>
               )}
               <div className={fieldClass("educationPathReasons")} data-field="educationPathReasons">
                 <label>{requiredLabel("educationPathReasons", "你考虑上述教育路径的主要原因是什么？")}</label>
-                <ChoiceGroup options={educationReasonOptions} values={form.educationPathReasons} onChange={(value) => patch("educationPathReasons", value)} />
+                {questionFlags("educationPathReasons", true, 3)}
+                <ChoiceGroup options={educationReasonOptions} values={form.educationPathReasons} max={3} onChange={(value) => patch("educationPathReasons", value)} />
                 {fieldError("educationPathReasons")}
               </div>
-              <div className="field">
-                <label>你对当前教育路径规划的确定程度是多少？</label>
-                <input className="input" min={1} max={5} type="range" value={form.educationCertainty} onChange={(event) => patch("educationCertainty", Number(event.target.value))} />
-                <div className="hint">当前：{form.educationCertainty}/5</div>
-              </div>
+              {form.educationPathReasons.includes("其他") && textField("educationPathReasonOther", "请填写其他原因", true)}
             </>
           )}
 
@@ -697,6 +722,7 @@ export function AssessmentPage() {
               {textField("fiveYearRole", "你希望从事什么岗位、承担什么角色？")}
               <div className={fieldClass("fiveYearFamilyStatus")} data-field="fiveYearFamilyStatus">
                 <label>{requiredLabel("fiveYearFamilyStatus", "你期待的家庭或亲密关系状态是？")}</label>
+                {questionFlags("fiveYearFamilyStatus")}
                 <RadioGroup options={fiveYearFamilyOptions} value={form.fiveYearFamilyStatus} onChange={(value) => patch("fiveYearFamilyStatus", value)} />
                 {fieldError("fiveYearFamilyStatus")}
               </div>
@@ -710,6 +736,7 @@ export function AssessmentPage() {
               {textField("tenYearRole", "你希望从事什么岗位、承担什么角色？")}
               <div className={fieldClass("tenYearFamilyStatus")} data-field="tenYearFamilyStatus">
                 <label>{requiredLabel("tenYearFamilyStatus", "你期待的家庭或亲密关系状态是？")}</label>
+                {questionFlags("tenYearFamilyStatus")}
                 <RadioGroup options={tenYearFamilyOptions} value={form.tenYearFamilyStatus} onChange={(value) => patch("tenYearFamilyStatus", value)} />
                 {fieldError("tenYearFamilyStatus")}
               </div>
@@ -722,16 +749,18 @@ export function AssessmentPage() {
             <>
               <div className={fieldClass("topValuesRanked")} data-field="topValuesRanked">
                 <label>{requiredLabel("topValuesRanked", "请选出你最看重的3项价值观。")}</label>
-                <div className="hint">请选择3项。</div>
+                {questionFlags("topValuesRanked", true, 3)}
                 <ChoiceGroup options={valueOptions} values={form.topValuesRanked} max={3} onChange={(value) => patch("topValuesRanked", value)} />
                 {fieldError("topValuesRanked")}
               </div>
               <div className="field">
                 <label>能力自评：1 = 很不符合，5 = 非常符合。</label>
+                <div className="question-flags">必填</div>
                 <ScoreRows rows={[["logic", "数学、逻辑推理"], ["expression", "写作、表达、讲故事"], ["spatialDesign", "空间、方向、设计"], ["interpersonal", "识人、沟通、理解情绪"]]} values={form.abilityScores} onChange={(key, value) => patch("abilityScores", { ...form.abilityScores, [key]: value })} />
               </div>
               <div className="field">
                 <label>兴趣倾向：1 = 很不喜欢，5 = 非常喜欢。</label>
+                <div className="question-flags">必填</div>
                 <ScoreRows rows={[["handsOn", "动手操作、修理工具"], ["research", "研究问题、分析数据"], ["creation", "创作、写作、设计或表达"], ["helping", "帮助他人、教学或咨询"], ["leadership", "销售、领导或影响他人"], ["detail", "按规则整理信息、处理细节"]]} values={form.interestScores} onChange={(key, value) => patch("interestScores", { ...form.interestScores, [key]: value })} />
               </div>
               {choiceField("praisedTraits", "从小到大，你最常被他人称赞的特质是什么？", praisedTraitOptions, "最多选择4项，请优先选择有真实例子的特质。", 4)}
@@ -739,7 +768,7 @@ export function AssessmentPage() {
               {textField("immersiveActivities", "哪些事情能让你长时间沉浸其中？", true)}
               {textField("favoriteKnowledgeAreas", "你喜欢学习哪方面的知识？", true)}
               {textField("selfDrivenActivities", "哪些事情即使没有外部奖励，你也愿意主动完成？", true)}
-              {radioField("preferredWorkStyle", "你更喜欢哪类工作方式？", preferredWorkStyleOptions)}
+              {choiceField("preferredWorkStyle", "你更喜欢哪类工作方式？", preferredWorkStyleOptions, "", 2)}
             </>
           )}
 
@@ -752,13 +781,12 @@ export function AssessmentPage() {
                 {textField("majorRank", "专业排名", false, "例如：12")}
                 {textField("majorTotal", "专业总人数", false, "例如：120")}
               </div>
-              {textField("englishCertificates", "英语成绩或证书", true, "例如：四级、六级、雅思、托福、专四专八等")}
-              {textField("academicExperiences", "科研、竞赛、论文或项目经历", true, "请写清时间、角色、成果和你具体做了什么")}
               {radioField("failedCourseStatus", "是否有挂科或重修经历？", failedCourseOptions)}
 
               <h2 className="form-subtitle">第二专业与转专业</h2>
               <div className={fieldClass("hasSecondMajor")} data-field="hasSecondMajor">
                 <label>{requiredLabel("hasSecondMajor", "是否修读第二专业、辅修、微专业或双学位？")}</label>
+                {questionFlags("hasSecondMajor")}
                 <RadioGroup options={secondMajorOptions} value={form.hasSecondMajor} onChange={patchSecondMajorStatus} />
                 {fieldError("hasSecondMajor")}
               </div>
@@ -771,6 +799,7 @@ export function AssessmentPage() {
               )}
               <div className={fieldClass("hasTransferredMajor")} data-field="hasTransferredMajor">
                 <label>{requiredLabel("hasTransferredMajor", "是否有转专业经历？")}</label>
+                {questionFlags("hasTransferredMajor")}
                 <RadioGroup options={transferMajorOptions} value={form.hasTransferredMajor} onChange={patchTransferredMajorStatus} />
                 {fieldError("hasTransferredMajor")}
               </div>
@@ -785,9 +814,11 @@ export function AssessmentPage() {
               <h2 className="form-subtitle">已有准备</h2>
               <div className={fieldClass("currentPreparations")} data-field="currentPreparations">
                 <label>{requiredLabel("currentPreparations", "为了未来目标，你已经做过哪些准备？")}</label>
+                {questionFlags("currentPreparations", true)}
                 <ChoiceGroup options={preparationOptions} values={form.currentPreparations} onChange={(value) => patch("currentPreparations", value)} />
                 {fieldError("currentPreparations")}
               </div>
+              {form.currentPreparations.includes("其他") && textField("currentPreparationOther", "请填写其他已做准备", true)}
               {textField("preparationDetails", "请具体展开说说这些准备。", true, "可写课程、比赛、科研项目、荣誉证书、个人作品、实习、社团或学生工作")}
             </>
           )}
@@ -796,27 +827,32 @@ export function AssessmentPage() {
             <>
               <div className={fieldClass("missingResources")} data-field="missingResources">
                 <label>{requiredLabel("missingResources", "你目前最缺的是什么？")}</label>
-                <div className="hint">最多选择3项。</div>
+                {questionFlags("missingResources", true, 3)}
                 <ChoiceGroup options={missingResourceOptions} values={form.missingResources} max={3} onChange={(value) => patch("missingResources", value)} />
                 {fieldError("missingResources")}
               </div>
               <div className={fieldClass("majorOutcomeAwareness")} data-field="majorOutcomeAwareness">
                 <label>{requiredLabel("majorOutcomeAwareness", "你是否了解本专业近几届毕业生的主要去向？")}</label>
+                {questionFlags("majorOutcomeAwareness")}
                 <RadioGroup options={majorOutcomeAwarenessOptions} value={form.majorOutcomeAwareness} onChange={(value) => patch("majorOutcomeAwareness", value)} />
                 {fieldError("majorOutcomeAwareness")}
               </div>
               <div className={fieldClass("targetJobAwareness")} data-field="targetJobAwareness">
                 <label>{requiredLabel("targetJobAwareness", "你是否了解自己心仪岗位的要求？")}</label>
+                {questionFlags("targetJobAwareness")}
                 <RadioGroup options={targetJobAwarenessOptions} value={form.targetJobAwareness} onChange={(value) => patch("targetJobAwareness", value)} />
                 {fieldError("targetJobAwareness")}
               </div>
               <div className={fieldClass("jobInfoChannels")} data-field="jobInfoChannels">
                 <label>{requiredLabel("jobInfoChannels", "你通常通过哪些渠道了解职业或招聘信息？")}</label>
+                {questionFlags("jobInfoChannels", true)}
                 <ChoiceGroup options={jobInfoChannelOptions} values={form.jobInfoChannels} onChange={(value) => patch("jobInfoChannels", value)} />
                 {fieldError("jobInfoChannels")}
               </div>
+              {form.jobInfoChannels.includes("其他") && textField("jobInfoChannelOther", "请填写其他职业信息渠道", true)}
               <div className={fieldClass("healthEnergyStatus")} data-field="healthEnergyStatus">
                 <label>{requiredLabel("healthEnergyStatus", "你的身体健康和精力状态如何？")}</label>
+                {questionFlags("healthEnergyStatus")}
                 <RadioGroup options={healthEnergyOptions} value={form.healthEnergyStatus} onChange={(value) => patch("healthEnergyStatus", value)} />
                 {fieldError("healthEnergyStatus")}
               </div>
@@ -825,13 +861,12 @@ export function AssessmentPage() {
               <h2 className="form-subtitle">执行力与承压</h2>
               <div className="field">
                 <label>为实现目标，在没有监督、且一年内看不到成果的情况下，你能否坚持？</label>
+                <div className="question-flags">必填</div>
                 <input className="input" min={1} max={5} type="range" value={form.longTermPersistence} onChange={(event) => patch("longTermPersistence", Number(event.target.value))} />
                 <div className="hint">当前：{form.longTermPersistence}/5</div>
               </div>
               {radioField("executionStyle", "你的执行力更接近哪种情况？", executionStyleOptions)}
-              {textField("executionCase", "请举一个近期坚持或没有坚持下来的真实例子。", true)}
               {radioField("failureRecoveryTime", "遇到失败后通常多久恢复？", failureRecoveryOptions)}
-              {textField("negativeFeedbackReaction", "面对他人负面评价时，你的典型反应是什么？", true)}
               {radioField("selfDoubtFrequency", "你是否容易产生自我怀疑？", selfDoubtOptions)}
               {radioField("problemSolvingStyle", "遇到问题时，你通常会如何处理？", problemSolvingOptions)}
               {radioField("supportNeed", "恢复状态时，你通常需要怎样的支持？", supportNeedOptions)}
@@ -845,10 +880,11 @@ export function AssessmentPage() {
             <>
               <div className={fieldClass("careerConfusions")} data-field="careerConfusions">
                 <label>{requiredLabel("careerConfusions", "你现在最想解决的生涯问题是什么？")}</label>
-                <div className="hint">最多选择3项。</div>
+                {questionFlags("careerConfusions", true, 3)}
                 <ChoiceGroup options={careerConfusionOptions} values={form.careerConfusions} max={3} onChange={(value) => patch("careerConfusions", value)} />
                 {fieldError("careerConfusions")}
               </div>
+              {form.careerConfusions.includes("其他") && textField("careerConfusionOther", "请填写其他生涯困惑", true)}
               {textField("mainConfusionText", "如果只能用一句话描述你现在的困惑，你会怎么说？", true)}
             </>
           )}

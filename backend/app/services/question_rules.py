@@ -9,10 +9,6 @@ QUESTION_RULES: dict[str, dict[str, object]] = {
         "purpose": "仅用于报告归属和测试回访，不作为画像判断证据，不在报告正文中展示。",
         "checks": [],
     },
-    "school": {
-        "purpose": "用于理解学生所处培养环境和资源背景，但不得臆测学校层次或编造校内政策。",
-        "checks": ["collegeMajor", "educationStage", "majorOutcomeAwareness"],
-    },
     "studentNumber": {
         "purpose": "仅用于区分同名学生和后台管理，不作为画像判断证据，不在报告正文中展示。",
         "checks": [],
@@ -27,7 +23,7 @@ QUESTION_RULES: dict[str, dict[str, object]] = {
     },
     "grade": {
         "purpose": "结合教育路径，测算距离第一次就业的剩余时间，确定实现理想就业的准备周期。",
-        "checks": ["educationStage", "mastersIntention", "phdIntention", "doctoralCareerDirection", "educationCertainty"],
+        "checks": ["educationStage", "mastersIntention", "phdIntention", "doctoralCareerDirection"],
     },
     "gender": {
         "purpose": "制定的生涯规划方案，需要结合性别特征有所调整",
@@ -43,7 +39,7 @@ QUESTION_RULES: dict[str, dict[str, object]] = {
     },
     "mastersIntention": {
         "purpose": "了解是否读研，以及本校、国内其他高校或留学、是否转专业、是否符合条件和准备计划。",
-        "checks": ["mastersPlan", "educationPathReasons", "educationCertainty"],
+        "checks": ["mastersPlan", "educationPathReasons"],
     },
     "mastersPlan": {
         "purpose": "了解读研方向、条件差距和准备工作，结合拟获取学位给出建议。",
@@ -51,7 +47,7 @@ QUESTION_RULES: dict[str, dict[str, object]] = {
     },
     "phdIntention": {
         "purpose": "了解是否读博，以及本校、国内其他高校或留学、是否转专业、是否符合条件和准备计划。",
-        "checks": ["phdPlan", "educationPathReasons", "educationCertainty"],
+        "checks": ["phdPlan", "educationPathReasons"],
     },
     "phdPlan": {
         "purpose": "了解读博方向、条件差距和准备工作，结合拟获取学位给出建议。",
@@ -59,15 +55,11 @@ QUESTION_RULES: dict[str, dict[str, object]] = {
     },
     "doctoralCareerDirection": {
         "purpose": "博士生后续发展方向，不再分析读硕或读博，而是判断科研、企业研发、博士后、体制内、创业等路径的适配证据。",
-        "checks": ["educationStage", "phdPlan", "academicExperiences", "careerRiskPreference", "highIntensityExperience"],
+        "checks": ["educationStage", "phdPlan", "doctoralCareerOther", "careerRiskPreference", "highIntensityExperience"],
     },
     "educationPathReasons": {
         "purpose": "分析教育路径原因、在意因素、生涯思考和迷茫点，并与5年、10年规划对应。",
-        "checks": ["mastersIntention", "phdIntention", "fiveYearIndustry", "fiveYearRole", "tenYearIndustry", "tenYearRole"],
-    },
-    "educationCertainty": {
-        "purpose": "判断是否已经想清楚当前教育路径。",
-        "checks": ["mastersPlan", "phdPlan", "careerConfusions"],
+        "checks": ["educationPathReasonOther", "mastersIntention", "phdIntention", "fiveYearIndustry", "fiveYearRole", "tenYearIndustry", "tenYearRole"],
     },
     "fiveYearCity": {
         "purpose": "判断目标城市的宜居程度，以及是否与职业发展方向一致。",
@@ -139,7 +131,7 @@ QUESTION_RULES: dict[str, dict[str, object]] = {
     },
     "currentGpa": {
         "purpose": "作为学业竞争力线索，用于判断保研、考研、出国、读博和学术路径可行性；不能脱离满分、排名和经历单独下结论。",
-        "checks": ["gpaScale", "majorRank", "majorTotal", "academicExperiences", "mastersIntention", "phdIntention"],
+        "checks": ["gpaScale", "majorRank", "majorTotal", "mastersIntention", "phdIntention"],
     },
     "gpaScale": {
         "purpose": "解释GPA分数的量尺，避免误读学业成绩。",
@@ -147,19 +139,11 @@ QUESTION_RULES: dict[str, dict[str, object]] = {
     },
     "majorRank": {
         "purpose": "辅助判断学业竞争力和保研、奖学金、升学竞争基础。",
-        "checks": ["majorTotal", "currentGpa", "academicExperiences"],
+        "checks": ["majorTotal", "currentGpa"],
     },
     "majorTotal": {
         "purpose": "解释专业排名含义，避免把排名数字孤立解读。",
         "checks": ["majorRank"],
-    },
-    "englishCertificates": {
-        "purpose": "判断出国、读研、外企或国际化岗位的语言准备情况。",
-        "checks": ["mastersIntention", "phdIntention", "fiveYearIndustry", "currentPreparations"],
-    },
-    "academicExperiences": {
-        "purpose": "识别科研、竞赛、论文、项目中的真实行为证据，用于验证学术潜力、执行力和专业匹配度。",
-        "checks": ["currentGpa", "praisedTraits", "traitEvidence", "currentPreparations"],
     },
     "failedCourseStatus": {
         "purpose": "识别学业稳定性风险和需要补救的短板，不作道德评价。",
@@ -175,7 +159,7 @@ QUESTION_RULES: dict[str, dict[str, object]] = {
     },
     "secondMajorProgress": {
         "purpose": "判断第二专业是否已有实质投入和成果，不把兴趣等同于能力。",
-        "checks": ["secondMajorName", "academicExperiences", "currentPreparations"],
+        "checks": ["secondMajorName", "currentPreparations"],
     },
     "secondMajorCareerInterest": {
         "purpose": "判断第二专业是否可能进入职业路径或仅作为兴趣拓展。",
@@ -199,11 +183,11 @@ QUESTION_RULES: dict[str, dict[str, object]] = {
     },
     "praisedTraits": {
         "purpose": "收集他人反馈中的潜在优势线索，但必须结合成果证据后才能判定为已验证优势。",
-        "checks": ["traitEvidence", "academicExperiences", "currentPreparations"],
+        "checks": ["traitEvidence", "currentPreparations"],
     },
     "traitEvidence": {
         "purpose": "验证被称赞特质是否产生过成果，区分已验证优势和待验证优势。",
-        "checks": ["praisedTraits", "academicExperiences", "currentPreparations"],
+        "checks": ["praisedTraits", "currentPreparations"],
     },
     "immersiveActivities": {
         "purpose": "识别稳定兴趣和可能长期投入的活动。",
@@ -227,7 +211,7 @@ QUESTION_RULES: dict[str, dict[str, object]] = {
     },
     "preparationDetails": {
         "purpose": "对已做准备进行具体化，验证课程、比赛、科研、项目、证书、作品、实习、社团等是否能支撑目标。",
-        "checks": ["currentPreparations", "academicExperiences", "targetJobAwareness"],
+        "checks": ["currentPreparations", "currentPreparationOther", "targetJobAwareness"],
     },
     "missingResources": {
         "purpose": "判断执行力和当前短板，并给出补齐方向、能力或资源的建议。",
@@ -243,7 +227,7 @@ QUESTION_RULES: dict[str, dict[str, object]] = {
     },
     "jobInfoChannels": {
         "purpose": "了解信息渠道，给出需要补充的渠道建议，并作为了解行为特点的线索。",
-        "checks": ["majorOutcomeAwareness", "targetJobAwareness"],
+        "checks": ["majorOutcomeAwareness", "targetJobAwareness", "jobInfoChannelOther"],
     },
     "healthEnergyStatus": {
         "purpose": "判断健康管理习惯和精力能否支撑生涯规划需求。",
@@ -255,23 +239,15 @@ QUESTION_RULES: dict[str, dict[str, object]] = {
     },
     "longTermPersistence": {
         "purpose": "判断长期目标在缺少监督和短期反馈时的坚持能力。",
-        "checks": ["executionStyle", "executionCase", "currentPreparations"],
+        "checks": ["executionStyle", "currentPreparations"],
     },
     "executionStyle": {
-        "purpose": "判断执行力和启动难度，结合实际案例而不是只看主观评价。",
-        "checks": ["executionCase", "currentPreparations", "missingResources"],
-    },
-    "executionCase": {
-        "purpose": "验证执行力自评的真实案例，识别能坚持和容易中断的条件。",
-        "checks": ["executionStyle", "longTermPersistence"],
+        "purpose": "判断执行力和启动难度。",
+        "checks": ["currentPreparations", "missingResources"],
     },
     "failureRecoveryTime": {
         "purpose": "判断挫折恢复速度和路径风险承受能力，不作心理诊断。",
         "checks": ["selfDoubtFrequency", "problemSolvingStyle", "supportNeed"],
-    },
-    "negativeFeedbackReaction": {
-        "purpose": "了解面对负面评价的典型反应，用于设计反馈和复盘方式，不作人格定论。",
-        "checks": ["failureRecoveryTime", "selfDoubtFrequency"],
     },
     "selfDoubtFrequency": {
         "purpose": "识别自我怀疑对行动的影响，不作心理诊断。",
@@ -299,7 +275,7 @@ QUESTION_RULES: dict[str, dict[str, object]] = {
     },
     "careerConfusions": {
         "purpose": "确定报告重点回答的问题，并按所选困惑分析原因和给出建议。",
-        "checks": ["mainConfusionText"],
+        "checks": ["careerConfusionOther", "mainConfusionText"],
     },
     "mainConfusionText": {
         "purpose": "补充学生最核心的困惑，作为报告重点和长期思考问题的依据。",
