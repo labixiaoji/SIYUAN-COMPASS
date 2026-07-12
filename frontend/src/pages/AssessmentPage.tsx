@@ -562,9 +562,8 @@ export function AssessmentPage() {
     );
   }
 
-  function questionFlags(key: FieldKey, multiple = false, max?: number) {
+  function questionFlags(_key: FieldKey, multiple = false, max?: number) {
     const flags = [
-      requiredFieldKeys.has(key) ? "必填" : "",
       multiple ? "多选" : "",
       max ? `最多选择 ${max} 项` : ""
     ].filter(Boolean);
@@ -754,13 +753,11 @@ export function AssessmentPage() {
                 {fieldError("topValuesRanked")}
               </div>
               <div className="field">
-                <label>能力自评：1 = 很不符合，5 = 非常符合。</label>
-                <div className="question-flags">必填</div>
+                <label>能力自评：1 = 很不符合，5 = 非常符合。<span className="required-mark">*</span></label>
                 <ScoreRows rows={[["logic", "数学、逻辑推理"], ["expression", "写作、表达、讲故事"], ["spatialDesign", "空间、方向、设计"], ["interpersonal", "识人、沟通、理解情绪"]]} values={form.abilityScores} onChange={(key, value) => patch("abilityScores", { ...form.abilityScores, [key]: value })} />
               </div>
               <div className="field">
-                <label>兴趣倾向：1 = 很不喜欢，5 = 非常喜欢。</label>
-                <div className="question-flags">必填</div>
+                <label>兴趣倾向：1 = 很不喜欢，5 = 非常喜欢。<span className="required-mark">*</span></label>
                 <ScoreRows rows={[["handsOn", "动手操作、修理工具"], ["research", "研究问题、分析数据"], ["creation", "创作、写作、设计或表达"], ["helping", "帮助他人、教学或咨询"], ["leadership", "销售、领导或影响他人"], ["detail", "按规则整理信息、处理细节"]]} values={form.interestScores} onChange={(key, value) => patch("interestScores", { ...form.interestScores, [key]: value })} />
               </div>
               {choiceField("praisedTraits", "从小到大，你最常被他人称赞的特质是什么？", praisedTraitOptions, "最多选择4项，请优先选择有真实例子的特质。", 4)}
@@ -860,8 +857,7 @@ export function AssessmentPage() {
 
               <h2 className="form-subtitle">执行力与承压</h2>
               <div className="field">
-                <label>为实现目标，在没有监督、且一年内看不到成果的情况下，你能否坚持？</label>
-                <div className="question-flags">必填</div>
+                <label>为实现目标，在没有监督、且一年内看不到成果的情况下，你能否坚持？<span className="required-mark">*</span></label>
                 <input className="input" min={1} max={5} type="range" value={form.longTermPersistence} onChange={(event) => patch("longTermPersistence", Number(event.target.value))} />
                 <div className="hint">当前：{form.longTermPersistence}/5</div>
               </div>
