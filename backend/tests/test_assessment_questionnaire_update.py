@@ -37,6 +37,10 @@ class AssessmentQuestionnaireUpdateTest(unittest.TestCase):
             self.assertIn(field, SCHEMA_SOURCE)
             self.assertIn(field, VALIDATOR_SOURCE)
 
+    def test_academic_competitiveness_fields_are_required(self):
+        for field in ["currentGpa", "gpaScale", "majorRank", "majorTotal"]:
+            self.assertIn(f'"{field}":', VALIDATOR_SOURCE)
+
 
 if __name__ == "__main__":
     unittest.main()
