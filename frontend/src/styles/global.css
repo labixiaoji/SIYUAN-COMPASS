@@ -463,6 +463,49 @@ select {
   margin-bottom: 16px;
 }
 
+.admin-record-filters {
+  background: #f7faf9;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  display: grid;
+  gap: 14px;
+  grid-template-columns: minmax(220px, 1.5fr) repeat(3, minmax(140px, 1fr));
+  margin-bottom: 18px;
+  padding: 16px;
+}
+
+.admin-record-filters label {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+
+.admin-record-filters label > span {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.admin-record-filters input,
+.admin-record-filters select {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  color: var(--ink);
+  font: inherit;
+  min-height: 44px;
+  min-width: 0;
+  padding: 0 12px;
+  width: 100%;
+}
+
+.admin-record-filters input:focus,
+.admin-record-filters select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(24, 125, 111, 0.12);
+  outline: none;
+}
+
 .admin-score-panel {
   margin-top: 24px;
 }
@@ -517,6 +560,36 @@ select {
 .admin-record-list {
   display: grid;
   gap: 14px;
+}
+
+.admin-pagination {
+  align-items: center;
+  display: flex;
+  gap: 14px;
+  justify-content: center;
+  margin-top: 20px;
+}
+
+.admin-pagination span {
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.admin-pagination .button {
+  min-height: 40px;
+  padding: 0 16px;
+}
+
+.low-score-link {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+  text-decoration: underline;
 }
 
 .admin-record-card {
@@ -1219,6 +1292,10 @@ select {
   .admin-record-top {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .admin-record-filters {
+    grid-template-columns: 1fr;
   }
 
   .admin-record-actions {

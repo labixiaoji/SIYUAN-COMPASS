@@ -3,6 +3,8 @@ import { Link } from "react-router-dom";
 import { fetchAdminMetrics, fetchAdminRecords } from "../api/admin";
 import type { AdminMetrics, AdminRecord, ReportFeedbackRecord } from "../types/report";
 
+const recordsPerPage = 8;
+
 function reportStatusText(record: AdminRecord) {
   if (record.report.qualityStatus === "failed") return "需检查";
   if (record.report.qualityStatus === "warning") return "有提醒";
@@ -53,6 +55,11 @@ export function AdminPage() {
   const [metrics, setMetrics] = useState<AdminMetrics | null>(null);
   const [records, setRecords] = useState<AdminRecord[]>([]);
   const [error, setError] = useState("");
+  const [keyword, setKeyword] = useState("");
+  const [qualityStatus, setQualityStatus] = useState("all");
+  const [educationStage, setEducationStage] = useState("all");
+  const [collegeMajor, setCollegeMajor] = useState("all");
+  const [page, setPage] = useState(1);
 
   useEffect(() => {
     Promise.all([fetchAdminMetrics(), fetchAdminRecords()])
@@ -69,6 +76,44 @@ export function AdminPage() {
 
   if (!metrics) {
     return <main className="shell page"><div className="panel">后台数据加载中...</div></main>;
+  }
+
+  const educationStages = Array.from(new Set(records.map((record) => record.assessment.educationStage).filter(Boolean))).sort();
+  const collegeMajors = Array.from(new Set(records.map((record) => record.assessment.collegeMajor).filter(Boolean))).sort();
+  const normalizedKeyword = keyword.trim().toLowerCase();
+  const filteredRecords = records.filter((record) => {
+    const searchableText = [
+      record.student.displayName,
+      record.student.username,
+      record.student.studentNumber,
+      record.student.contactInfo,
+      record.assessment.collegeMajor,
+    ].filter(Boolean).join(" ").toLowerCase();
+    return (
+      (!normalizedKeyword || searchableText.includes(normalizedKeyword))
+      && (qualityStatus === "all" || record.report.qualityStatus === qualityStatus)
+      && (educationStage === "all" || record.assessment.educationStage === educationStage)
+      && (collegeMajor === "all" || record.assessment.collegeMajor === collegeMajor)
+    );
+  });
+  const totalPages = Math.max(1, Math.ceil(filteredRecords.length / recordsPerPage));
+  const currentPage = Math.min(page, totalPages);
+  const displayedRecords = filteredRecords.slice((currentPage - 1) * recordsPerPage, currentPage * recordsPerPage);
+
+  function resetPage(setter: (value: string) => void, value: string) {
+    setter(value);
+    setPage(1);
+  }
+
+  function jumpToReport(reportId: string) {
+    const recordIndex = records.findIndex((record) => record.report.id === reportId);
+    if (recordIndex < 0) return;
+    setKeyword("");
+    setQualityStatus("all");
+    setEducationStage("all");
+    setCollegeMajor("all");
+    setPage(Math.floor(recordIndex / recordsPerPage) + 1);
+    window.setTimeout(() => document.getElementById(`report-${reportId}`)?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
   }
 
   return (
@@ -105,7 +150,7 @@ export function AdminPage() {
           ) : (
             <div className="low-score-list">
               {metrics.lowScoreReports.map((reportId) => (
-                <a key={reportId} href={`#report-${reportId}`}>报告 {reportId.slice(0, 8)}</a>
+                <button className="low-score-link" key={reportId} onClick={() => jumpToReport(reportId)}>报告 {reportId.slice(0, 8)}</button>
               ))}
             </div>
           )}
@@ -116,17 +161,56 @@ export function AdminPage() {
         <div className="admin-section-head">
           <div>
             <h2>学生生成记录</h2>
-            <p className="hint">每条记录包含问卷入口、报告状态和学生反馈。</p>
+            <p className="hint">每条记录包含问卷入口、报告状态和学生反馈。可按学生、状态和问卷信息检索。</p>
           </div>
-          <span>{records.length} 条</span>
+          <span>{filteredRecords.length} / {records.length} 条</span>
+        </div>
+        <div className="admin-record-filters" aria-label="生成记录筛选">
+          <label className="admin-filter-keyword">
+            <span>搜索学生</span>
+            <input
+              value={keyword}
+              onChange={(event) => resetPage(setKeyword, event.target.value)}
+              placeholder="姓名、用户名、学号、专业"
+            />
+          </label>
+          <label>
+            <span>报告状态</span>
+            <select value={qualityStatus} onChange={(event) => resetPage(setQualityStatus, event.target.value)}>
+              <option value="all">全部</option>
+              <option value="passed">已通过</option>
+              <option value="warning">有提醒</option>
+              <option value="failed">需检查</option>
+              <option value="unchecked">未检查</option>
+            </select>
+          </label>
+          <label>
+            <span>教育阶段</span>
+            <select value={educationStage} onChange={(event) => resetPage(setEducationStage, event.target.value)}>
+              <option value="all">全部</option>
+              {educationStages.map((item) => <option key={item} value={item}>{item}</option>)}
+            </select>
+          </label>
+          <label>
+            <span>专业</span>
+            <select value={collegeMajor} onChange={(event) => resetPage(setCollegeMajor, event.target.value)}>
+              <option value="all">全部</option>
+              {collegeMajors.map((item) => <option key={item} value={item}>{item}</option>)}
+            </select>
+          </label>
         </div>
         {records.length === 0 ? (
           <div className="panel empty-state">
             <p>暂无报告记录。</p>
           </div>
+        ) : filteredRecords.length === 0 ? (
+          <div className="panel empty-state">
+            <p>没有符合当前筛选条件的生成记录。</p>
+          </div>
         ) : (
-          <div className="admin-record-list">
-            {records.map((record) => {
+          <>
+            <div className="admin-record-list">
+            {displayedRecords.map((record) => {
               const feedbacks = record.feedbacks ?? [];
               const warnings = reportWarnings(record);
               return (
@@ -210,7 +294,15 @@ export function AdminPage() {
                 </article>
               );
             })}
-          </div>
+            </div>
+            {totalPages > 1 && (
+              <nav className="admin-pagination" aria-label="生成记录分页">
+                <button className="button secondary" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>上一页</button>
+                <span>第 {currentPage} / {totalPages} 页</span>
+                <button className="button secondary" disabled={currentPage === totalPages} onClick={() => setPage(currentPage + 1)}>下一页</button>
+              </nav>
+            )}
+          </>
         )}
       </section>
     </main>
