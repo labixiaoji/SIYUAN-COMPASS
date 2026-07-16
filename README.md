@@ -137,23 +137,52 @@ HTTP_PORT=8080
 管理员后台：http://localhost:5173/admin
 ```
 
-## Docker 本地开发
+## Docker 配置
 
-项目只保留一份 `docker-compose.yml`，用于本地开发。首次启动前创建 `.env`，然后启动容器：
+项目明确区分两套 Compose：
+
+- `docker-compose.yml`：服务器生产部署。
+- `docker-compose.dev.yml`：本地开发和热更新。
+
+### 服务器生产部署
+
+生产版使用 Nginx 托管前端，后端不直接暴露到公网，数据保存在 `postgres-data` volume。
 
 ```bash
 cp .env.example .env
 docker compose up -d --build
+docker compose ps
 ```
 
-访问地址：
+更新服务器代码：
+
+```bash
+git pull
+docker compose up -d --build
+```
+
+修改服务器 `.env` 后：
+
+```bash
+docker compose up -d --force-recreate backend
+```
+
+### 本地开发
+
+本地必须显式指定开发文件：
+
+```bash
+docker compose -f docker-compose.dev.yml up -d --build
+```
+
+本地访问地址：
 
 ```text
 前端：http://localhost:5173
 后端：http://localhost:8000
 ```
 
-特点：
+开发版特点：
 
 - 使用项目名 `siyuan-compass-dev` 和数据库 volume `postgres-dev-data`。
 - 后端挂载 `backend/app`，并使用 `uvicorn --reload`。
@@ -163,7 +192,11 @@ docker compose up -d --build
 停止开发模式：
 
 ```bash
-docker compose down
+docker compose -f docker-compose.dev.yml down
 ```
 
-更新代码后通常会热更新；修改 `.env` 后需要执行 `docker compose up -d --force-recreate backend`。
+本地更新代码后通常会热更新；修改 `.env` 后需要执行：
+
+```bash
+docker compose -f docker-compose.dev.yml up -d --force-recreate backend
+```
