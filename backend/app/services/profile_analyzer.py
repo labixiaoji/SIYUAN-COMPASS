@@ -7,7 +7,7 @@ from uuid import uuid4
 
 from pydantic import ValidationError
 
-from app.llm.deepseek import create_deepseek_chat_completion, is_deepseek_configured
+from app.llm.provider import create_chat_completion, get_llm_configuration_error, is_llm_configured
 from app.schemas.assessment import AssessmentResponse
 from app.schemas.profile import CareerProfile, ProfileAnalysisResult
 from app.services.profile_prompt import PROFILE_PROMPT_VERSION, build_profile_messages
@@ -101,8 +101,8 @@ async def analyze_career_profile(
     response: AssessmentResponse,
     progress_callback: ProgressCallback | None = None,
 ) -> CareerProfile:
-    if not is_deepseek_configured():
-        raise ProfileAnalysisError("大模型未配置，请检查 DEEPSEEK_API_KEY。")
+    if not is_llm_configured():
+        raise ProfileAnalysisError(get_llm_configuration_error())
 
     result: dict[str, str] | None = None
     analysis: ProfileAnalysisResult | None = None
@@ -119,7 +119,7 @@ async def analyze_career_profile(
                     f"画像结构未通过校验，正在自动修正：{retry_reason or '未知原因'}",
                 )
         try:
-            result = await create_deepseek_chat_completion(
+            result = await create_chat_completion(
                 build_profile_messages(response, retry_reason),
                 temperature=0.1,
                 max_tokens=10000,

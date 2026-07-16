@@ -381,7 +381,27 @@ select {
 }
 
 .auth-card h1 {
-  margin-top: 0;
+  font-size: 32px;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  margin: 8px 0 10px;
+}
+
+.auth-heading {
+  margin-bottom: 28px;
+}
+
+.auth-heading .hint {
+  line-height: 1.7;
+  margin: 0;
+}
+
+.auth-product-name {
+  color: var(--accent);
+  display: block;
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
 }
 
 .auth-submit {
@@ -1112,6 +1132,17 @@ select {
   gap: 16px;
 }
 
+.report-page-header {
+  align-items: flex-start;
+  display: flex;
+  gap: 20px;
+  justify-content: space-between;
+}
+
+.report-page-header .button {
+  flex: 0 0 auto;
+}
+
 .feedback-cta {
   align-items: center;
   background: #f5fbf9;
@@ -1329,6 +1360,15 @@ select {
     padding: 22px 18px;
   }
 
+  .report-page-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .report-page-header .button {
+    align-self: flex-start;
+  }
+
   .feedback-cta {
     align-items: stretch;
     flex-direction: column;
@@ -1341,5 +1381,111 @@ select {
 
   .generation-progress-steps {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media print {
+  @page {
+    margin: 16mm 15mm 18mm;
+    size: A4 portrait;
+  }
+
+  :root {
+    --ink: #111827;
+    --muted: #4b5563;
+    --line: #d1d5db;
+    --panel: #ffffff;
+  }
+
+  * {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  body {
+    background: #ffffff;
+    color: var(--ink);
+    font-family: "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", Arial, sans-serif;
+  }
+
+  .topbar,
+  .print-hidden,
+  .feedback-cta,
+  .actions {
+    display: none !important;
+  }
+
+  .shell.page {
+    max-width: none;
+    padding: 0;
+    width: 100%;
+  }
+
+  .report-page-header {
+    border-bottom: 2px solid var(--accent);
+    display: block;
+    margin-bottom: 9mm;
+    padding-bottom: 5mm;
+  }
+
+  .report-page-header h1 {
+    font-size: 24pt;
+    line-height: 1.25;
+    margin-bottom: 3mm;
+  }
+
+  .report-page-header p {
+    color: var(--muted);
+    font-size: 9.5pt;
+  }
+
+  .report-reader {
+    display: block;
+  }
+
+  .report-section {
+    background: #ffffff;
+    border: 0;
+    border-radius: 0;
+    padding: 0;
+  }
+
+  .report-section + .report-section {
+    break-before: page;
+    page-break-before: always;
+  }
+
+  .report-section h2 {
+    break-after: avoid;
+    font-size: 17pt;
+    margin-bottom: 5mm;
+    page-break-after: avoid;
+  }
+
+  .report-section h3 {
+    break-after: avoid;
+    font-size: 13pt;
+    margin-top: 6mm;
+    page-break-after: avoid;
+  }
+
+  .report-section p,
+  .report-list-item,
+  .action-card,
+  .action-detail {
+    font-size: 10.5pt;
+    line-height: 1.8;
+  }
+
+  .action-card,
+  .report-list-item,
+  .action-detail {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .action-card {
+    background: #f5fbf9;
+    border-color: #cfe5df;
   }
 }

@@ -12,7 +12,7 @@ from app.storage.json_db import ensure_admin_account, ensure_storage
 
 settings = get_settings()
 
-app = FastAPI(title="Siyuan Compass API", version="0.1.0")
+app = FastAPI(title="大学生生涯规划智能小助手 API", version="0.1.0")
 
 app.add_middleware(
     CORSMiddleware,

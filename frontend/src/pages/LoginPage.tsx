@@ -36,8 +36,11 @@ export function LoginPage() {
   return (
     <main className="shell auth-page">
       <form className="panel auth-card" onSubmit={submit}>
-        <h1>登录思源 Compass</h1>
-        <p className="hint">登录后，你的问卷和报告会归入个人账号。</p>
+        <div className="auth-heading">
+          <span className="auth-product-name">大学生生涯规划智能小助手</span>
+          <h1>欢迎回来</h1>
+          <p className="hint">登录账号，继续填写问卷或查看你的生涯蓝图。</p>
+        </div>
         <div className="field">
           <label>用户名</label>
           <input className="input" autoComplete="username" value={username} onChange={(event) => setUsername(event.target.value)} />

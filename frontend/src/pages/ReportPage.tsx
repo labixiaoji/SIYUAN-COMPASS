@@ -39,11 +39,21 @@ export function ReportPage() {
   const currentAccountName = user?.id === report.userId ? user.displayName.trim() : "";
   const displayName = studentName || report.accountDisplayName?.trim() || currentAccountName || "学生";
 
+  function exportPdf() {
+    const previousTitle = document.title;
+    document.title = `${displayName}的生涯蓝图`;
+    window.print();
+    document.title = previousTitle;
+  }
+
   return (
     <main className="shell page">
-      <div className="page-title">
-        <h1>{displayName}的生涯蓝图</h1>
-        <p>生成状态：{report.generationStatus} · 字数：{report.wordCount}</p>
+      <div className="page-title report-page-header">
+        <div>
+          <h1>{displayName}的生涯蓝图</h1>
+          <p>生成状态：{report.generationStatus} · 字数：{report.wordCount}</p>
+        </div>
+        <button className="button secondary print-hidden" type="button" onClick={exportPdf}>导出 PDF</button>
       </div>
       <ReportRenderer content={report.content} />
       {user?.role !== "admin" && (

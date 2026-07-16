@@ -4,14 +4,14 @@ from datetime import datetime, timezone
 from typing import Callable
 from uuid import uuid4
 
-from app.llm.deepseek import create_deepseek_chat_completion, is_deepseek_configured
+from app.llm.provider import create_chat_completion, get_llm_configuration_error, is_llm_configured
 from app.schemas.assessment import AssessmentResponse
 from app.schemas.profile import CareerProfile
 from app.schemas.report import CareerBlueprintReport
 from app.services.report_prompt import build_report_messages
 from app.services.report_quality_check import check_report_quality, count_chineseish_words
 
-REPORT_PROMPT_VERSION = "deepseek-v4.0.0"
+REPORT_PROMPT_VERSION = "career-blueprint-v1.0.0"
 
 
 class ReportGenerationError(RuntimeError):
@@ -30,14 +30,14 @@ async def generate_report(
     profile: CareerProfile,
     progress_callback: ProgressCallback | None = None,
 ) -> CareerBlueprintReport:
-    if not is_deepseek_configured():
-        raise ReportGenerationError("大模型未配置，请检查 DEEPSEEK_API_KEY。")
+    if not is_llm_configured():
+        raise ReportGenerationError(get_llm_configuration_error())
 
     now = now_iso()
     if progress_callback:
         progress_callback("report_generating", 65, "正在基于原始问卷和结构化画像生成六模块三路径报告。")
     try:
-        result = await create_deepseek_chat_completion(
+        result = await create_chat_completion(
             build_report_messages(response, profile),
             max_tokens=10000,
         )

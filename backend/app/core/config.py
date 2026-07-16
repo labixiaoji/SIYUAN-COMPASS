@@ -9,6 +9,10 @@ ROOT_ENV_FILE = Path(__file__).resolve().parents[3] / ".env"
 
 
 class Settings(BaseSettings):
+    llm_provider: str = "kimi"
+    kimi_api_key: str | None = None
+    kimi_base_url: str = "https://api.moonshot.cn/v1"
+    kimi_model: str = "kimi-k2.6"
     deepseek_api_key: str | None = None
     deepseek_base_url: str = "https://api.deepseek.com"
     deepseek_model: str = "deepseek-chat"

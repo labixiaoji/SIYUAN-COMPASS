@@ -1,6 +1,6 @@
-# Siyuan Compass
+# 大学生生涯规划智能小助手
 
-思源 Compass 现在采用前后端分离结构：
+大学生生涯规划智能小助手采用前后端分离结构：
 
 ```text
 frontend/  React + TypeScript + Vite
@@ -60,14 +60,17 @@ GET  /api/assessment-jobs/{jobId}
 cp .env.example .env
 ```
 
-至少填写：
+至少填写选中模型通道的 API Key：
 
 ```text
-DEEPSEEK_API_KEY
+LLM_PROVIDER=kimi
+KIMI_API_KEY
 AUTH_SECRET
 ADMIN_PASSWORD
 POSTGRES_PASSWORD
 ```
+
+如需改用 DeepSeek，将 `LLM_PROVIDER` 设为 `deepseek`，并填写 `DEEPSEEK_API_KEY`。
 
 后端：
 
@@ -100,6 +103,10 @@ npm run dev
 项目只保留根目录 `.env` 作为唯一环境配置文件。本地后端、本地前端和 Docker Compose 都读取这一份配置：
 
 ```text
+LLM_PROVIDER=kimi
+KIMI_API_KEY=
+KIMI_BASE_URL=https://api.moonshot.cn/v1
+KIMI_MODEL=kimi-k2.6
 DEEPSEEK_API_KEY=
 DEEPSEEK_BASE_URL=https://api.deepseek.com
 DEEPSEEK_MODEL=deepseek-chat
@@ -118,7 +125,7 @@ DATABASE_URL=postgresql://siyuan:please-change-postgres-password@localhost:5432/
 HTTP_PORT=8080
 ```
 
-必须配置有效的 `DEEPSEEK_API_KEY`。模型未配置、超时或调用失败时，报告接口会直接返回错误，不会生成备用模板报告。
+`LLM_PROVIDER` 支持 `kimi` 和 `deepseek`，只会调用当前选中的通道。必须配置该通道对应的 API Key。模型未配置、超时或调用失败时，报告接口会直接返回错误，不会生成备用模板报告。
 
 首次启动时，后端会根据 `ADMIN_USERNAME` 和 `ADMIN_PASSWORD` 创建管理员账号。部署或提供给真实学生使用前，必须修改默认管理员密码和 `AUTH_SECRET`。
 
@@ -130,70 +137,13 @@ HTTP_PORT=8080
 管理员后台：http://localhost:5173/admin
 ```
 
-## Docker 部署
+## Docker 本地开发
 
-推荐部署到安装了 Docker Engine 和 Docker Compose 的 Linux 服务器。Compose 会启动
-PostgreSQL、FastAPI 后端和 Nginx 前端。后端保持单 worker，避免报告生成任务和数据库初始化重复执行。
-
-1. 将代码上传或克隆到服务器。
-2. 创建生产环境变量：
+项目只保留一份 `docker-compose.yml`，用于本地开发。首次启动前创建 `.env`，然后启动容器：
 
 ```bash
 cp .env.example .env
-openssl rand -hex 32
-```
-
-将生成的随机值填写到 `.env` 的 `AUTH_SECRET`，并配置：
-
-```text
-DEEPSEEK_API_KEY
-FRONTEND_ORIGINS
-ADMIN_PASSWORD
-POSTGRES_PASSWORD
-```
-
-3. 构建并启动：
-
-```bash
 docker compose up -d --build
-docker compose ps
-docker compose logs -f backend
-```
-
-4. 验证：
-
-```bash
-curl http://服务器IP/health
-```
-
-返回 `{"status":"ok"}` 后即可通过 `http://服务器IP` 访问。前端容器会把
-`/api` 请求转发到后端，后端端口不会直接暴露到公网。
-
-数据持久化在 Docker volume `postgres-data` 中。升级应用时不要删除该 volume：
-
-```bash
-git pull
-docker compose up -d --build
-```
-
-备份数据库：
-
-```bash
-docker compose exec postgres pg_dump -U siyuan siyuan_compass > siyuan-backup-$(date +%F).sql
-```
-
-生产环境应使用域名和 HTTPS。可以在该 Compose 服务前配置服务器 Nginx、
-Caddy 或云厂商负载均衡，将 HTTPS 请求转发到服务器的 `HTTP_PORT`。
-
-注意：管理员账号只在首次启动且账号不存在时创建。数据库里已存在管理员后，
-仅修改 `.env` 中的 `ADMIN_PASSWORD` 不会自动修改已有密码。
-
-## Docker 本地开发模式
-
-如果希望本地代码修改后容器内自动生效，使用开发 Compose：
-
-```bash
-docker compose -f docker-compose.dev.yml up
 ```
 
 访问地址：
@@ -203,10 +153,9 @@ docker compose -f docker-compose.dev.yml up
 后端：http://localhost:8000
 ```
 
-开发模式特点：
+特点：
 
-- 使用独立项目名 `siyuan-compass-dev`，不会占用部署模式的容器名。
-- 使用独立数据库 volume `postgres-dev-data`，不会影响部署模式数据。
+- 使用项目名 `siyuan-compass-dev` 和数据库 volume `postgres-dev-data`。
 - 后端挂载 `backend/app`，并使用 `uvicorn --reload`。
 - 前端挂载 `frontend`，并运行 Vite dev server。
 - 前端依赖安装在 Docker volume `frontend-node-modules`，不会覆盖宿主机的 `frontend/node_modules`。
@@ -214,5 +163,7 @@ docker compose -f docker-compose.dev.yml up
 停止开发模式：
 
 ```bash
-docker compose -f docker-compose.dev.yml down
+docker compose down
 ```
+
+更新代码后通常会热更新；修改 `.env` 后需要执行 `docker compose up -d --force-recreate backend`。

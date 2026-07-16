@@ -16,7 +16,7 @@ async def create_deepseek_chat_completion(
 ) -> dict[str, str]:
     settings = get_settings()
     if not settings.deepseek_api_key:
-        raise RuntimeError("缺少 DEEPSEEK_API_KEY，已跳过 DeepSeek 调用。")
+        raise RuntimeError("缺少 DEEPSEEK_API_KEY，无法调用 DeepSeek。")
 
     base_url = settings.deepseek_base_url.rstrip("/")
     async with httpx.AsyncClient(timeout=settings.llm_timeout_seconds) as client:
@@ -35,19 +35,22 @@ async def create_deepseek_chat_completion(
                 **({"response_format": {"type": "json_object"}} if json_mode else {}),
             },
         )
-        data = response.json()
+        try:
+            data = response.json()
+        except ValueError as error:
+            raise RuntimeError(f"DeepSeek API 返回了无法解析的响应：{response.status_code}") from error
 
     if response.status_code >= 400:
         message = data.get("error", {}).get("message") if isinstance(data, dict) else None
         raise RuntimeError(message or f"DeepSeek API 请求失败：{response.status_code}")
 
-    content = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+    choice = (data.get("choices") or [{}])[0]
+    content = (choice.get("message") or {}).get("content", "").strip()
     if not content:
         raise RuntimeError("DeepSeek API 未返回报告内容。")
 
-    finish_reason = data.get("choices", [{}])[0].get("finish_reason", "")
     return {
         "content": content,
-        "modelName": settings.deepseek_model,
-        "finishReason": finish_reason,
+        "modelName": data.get("model") or settings.deepseek_model,
+        "finishReason": choice.get("finish_reason") or "",
     }

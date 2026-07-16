@@ -1,7 +1,7 @@
 [project]
 name = "siyuan-compass-backend"
 version = "0.1.0"
-description = "FastAPI backend for Siyuan Compass."
+description = "FastAPI backend for 大学生生涯规划智能小助手."
 requires-python = ">=3.10"
 dependencies = [
   "fastapi>=0.111.0",
