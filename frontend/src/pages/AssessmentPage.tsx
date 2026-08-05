@@ -709,7 +709,6 @@ export function AssessmentPage() {
         <section className="panel">
           {step === 0 && (
             <>
-              <p className="privacy-notice">姓名、学号和联系方式为选填信息；性别、教育背景及未来收入预期用于完善生涯规划问卷。</p>
               {textField("studentName", "姓名（选填）", false, "可填写真实姓名或常用称呼")}
               {textField("studentNumber", "学号（选填）", false, "如不便填写可以留空")}
               {textField("contactInfo", "联系方式（选填）", false, "如需后续联系可填写手机号、邮箱等")}
