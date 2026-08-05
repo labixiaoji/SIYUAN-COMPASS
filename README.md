@@ -37,11 +37,11 @@ admin_audit_logs        管理员操作记录
 ```text
 问卷回答
   -> 依据每道题的解释规则生成结构化用户画像
-  -> 校验证据、反证、矛盾、信息缺口和 Plan A / Plan B
+  -> 校验证据、反证、矛盾、信息缺口和 Plan A / Plan B / Plan C
   -> 基于原始回答和结构化画像生成六模块报告
 ```
 
-画像只做宽松的可用性校验：只要包含可用于报告生成的核心分析内容就会继续，缺失的辅助字段会记录为质量警告。画像生成成功后会立即保存问卷、结构化画像、模型原始输出和质量警告；后续报告生成失败不会丢失画像。
+画像会先经过结构校验，可用但缺少辅助字段时记录质量警告。系统长期保存经过校验的结构化画像，不保存大模型原始输出；发给模型的数据会排除姓名、学号、联系方式、收入预期和内部 ID 等不必要字段。报告首次未通过质量门禁时会自动要求模型完整修复一次，仍不合格才将任务标记为失败。
 
 前端使用生成任务接口展示实时阶段：
 
@@ -50,7 +50,23 @@ POST /api/assessment-jobs
 GET  /api/assessment-jobs/{jobId}
 ```
 
+生成任务及经过最小化处理的待处理输入保存在 PostgreSQL 中，并通过租约和心跳避免多个后端实例重复处理。服务重启后会恢复未完成任务；任务成功、失败或取消时会清除临时输入。默认每名学生每天最多创建 3 次生成任务，配额计数保存在登录账号的当日计数中，因此删除报告或业务数据不会绕过额度；终态任务记录保留 30 天，这些参数均可通过环境变量调整。
+
 原有 `POST /api/assessments` 同步接口仍然保留，适合通过 ApiPost 直接测试。
+
+## 隐私、移动端与数据管理
+
+本轮已经补充：
+
+- 问卷草稿和报告预填按用户隔离，保存在浏览器最多 7 天；切换账号不会读取其他用户草稿，并会清除上一账号在当前设备上的草稿；退出也会清除当前账号草稿。
+- 问卷采集姓名、学号和联系方式（均为选填），性别及 5/10 年预期收入为必填；姓名、学号、联系方式和收入预期不会发送给 AI 服务。
+- 健康、精力和心理感受题不在题目前增加额外用途说明，统一遵循隐私政策中的数据处理规则。
+- 页面在手机宽度下使用单栏表单、可横向滚动的步骤与导航、适合触控的输入区和操作区；退出按钮仅在手机端隐藏。
+- 提供 `/privacy` 隐私政策与数据管理页面、单份报告删除、全部业务数据清除，以及未知路由的 404 页面。
+- 删除业务数据不会删除登录账号；账号认证与后续 jAccount 接入由学校统一处理。
+- 管理员查看学生记录、完整问卷、审计日志以及编辑报告等敏感操作会写入审计日志；审计日志按 180 天保留策略清理。
+
+详细字段边界、模型传输范围与保留期限见 [`docs/数据隐私与保留策略.md`](docs/数据隐私与保留策略.md)。本轮不包含 jAccount/登录方式改造、语音输入以及页脚主管单位和联系方式；页脚目前只提供产品名称和隐私入口。
 
 ## 本地启动
 
@@ -115,6 +131,12 @@ FRONTEND_ORIGINS=http://localhost:5173,http://localhost:8080,http://localhost
 VITE_API_BASE_URL=http://localhost:8000/api
 AUTH_SECRET=please-change-to-a-long-random-string
 AUTH_TOKEN_HOURS=72
+REPORT_GENERATION_DAILY_LIMIT=3
+REPORT_GENERATION_QUOTA_TIMEZONE=Asia/Shanghai
+GENERATION_JOB_LEASE_SECONDS=300
+GENERATION_JOB_HEARTBEAT_SECONDS=30
+GENERATION_JOB_RETENTION_DAYS=30
+ADMIN_AUDIT_RETENTION_DAYS=180
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD=admin12345
 ADMIN_DISPLAY_NAME=系统管理员
@@ -127,6 +149,15 @@ HTTP_PORT=8080
 
 `LLM_PROVIDER` 支持 `kimi` 和 `deepseek`，只会调用当前选中的通道。必须配置该通道对应的 API Key。模型未配置、超时或调用失败时，报告接口会直接返回错误，不会生成备用模板报告。
 
+生成任务配置说明：
+
+- `REPORT_GENERATION_DAILY_LIMIT`：每名学生每天允许创建的任务数；`0` 表示不限制。
+- `REPORT_GENERATION_QUOTA_TIMEZONE`：每日额度的自然日时区，默认 `Asia/Shanghai`。
+- `GENERATION_JOB_LEASE_SECONDS`：任务租约时长；应大于心跳间隔。
+- `GENERATION_JOB_HEARTBEAT_SECONDS`：运行中任务续租间隔。
+- `GENERATION_JOB_RETENTION_DAYS`：成功、失败和取消任务的状态记录保留天数。
+- `ADMIN_AUDIT_RETENTION_DAYS`：管理员审计日志保留天数，默认 180 天。
+
 首次启动时，后端会根据 `ADMIN_USERNAME` 和 `ADMIN_PASSWORD` 创建管理员账号。部署或提供给真实学生使用前，必须修改默认管理员密码和 `AUTH_SECRET`。
 
 登录相关页面：
@@ -136,6 +167,26 @@ HTTP_PORT=8080
 学生注册：http://localhost:5173/register
 管理员后台：http://localhost:5173/admin
 ```
+
+当前仓库中的账号登录仅用于本地开发和联调，不代表已经完成真实 jAccount 集成。
+
+## 自动化检查
+
+后端包含报告质量、自动修复、生成任务恢复与模型数据最小化等单元测试；前端包含草稿隔离与过期、未授权处理、404、隐私入口和手机端退出按钮标识等测试。
+
+```bash
+cd backend
+python -m unittest discover -s tests
+```
+
+```bash
+cd frontend
+npm test
+npm run typecheck
+npm run build
+```
+
+这些命令验证应用逻辑和前端构建；不能替代连接真实 PostgreSQL、真实模型供应商、学校登录系统及生产反向代理的集成验收。
 
 ## Docker 配置
 

@@ -20,6 +20,12 @@ class Settings(BaseSettings):
     frontend_origins: str = "http://localhost:5173"
     auth_secret: str = "change-this-secret-before-production"
     auth_token_hours: int = 72
+    report_generation_daily_limit: int = 3
+    report_generation_quota_timezone: str = "Asia/Shanghai"
+    generation_job_lease_seconds: int = 300
+    generation_job_heartbeat_seconds: int = 30
+    generation_job_retention_days: int = 30
+    admin_audit_retention_days: int = 180
     admin_username: str = "admin"
     admin_password: str = "admin12345"
     admin_display_name: str = "系统管理员"

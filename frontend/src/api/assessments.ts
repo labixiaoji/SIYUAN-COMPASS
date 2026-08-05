@@ -32,15 +32,16 @@ export function submitAssessment(input: AssessmentResponseInput & { userId?: str
   });
 }
 
-export function createAssessmentJob(input: AssessmentResponseInput & { userId?: string }) {
+export function createAssessmentJob(input: AssessmentResponseInput & { userId?: string }, signal?: AbortSignal) {
   return apiRequest<{ jobId: string; status: "queued" }>("/assessment-jobs", {
     method: "POST",
-    body: JSON.stringify(input)
+    body: JSON.stringify(input),
+    signal
   });
 }
 
-export function fetchAssessmentJob(jobId: string) {
-  return apiRequest<GenerationJobStatus>(`/assessment-jobs/${jobId}`);
+export function fetchAssessmentJob(jobId: string, signal?: AbortSignal) {
+  return apiRequest<GenerationJobStatus>(`/assessment-jobs/${jobId}`, { signal });
 }
 
 export function cancelAssessmentJob(jobId: string) {

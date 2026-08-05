@@ -40,6 +40,11 @@ class PostgresStorageSchemaTest(unittest.TestCase):
         self.assertIn("save_generation_job_if_user_idle", STORAGE_SOURCE)
         self.assertIn("FOR UPDATE", STORAGE_SOURCE)
 
+    def test_daily_quota_counter_survives_business_data_deletion(self):
+        self.assertIn("generation_quota_day", STORAGE_SOURCE)
+        self.assertIn("generation_quota_used", STORAGE_SOURCE)
+        self.assertIn("UPDATE users", STORAGE_SOURCE)
+
     def test_admin_records_include_report_feedbacks(self):
         self.assertIn("feedbacks_by_report", STORAGE_SOURCE)
         self.assertIn('"feedbacks"', STORAGE_SOURCE)
