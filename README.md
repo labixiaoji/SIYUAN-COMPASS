@@ -66,7 +66,7 @@ GET  /api/assessment-jobs/{jobId}
 - 删除业务数据不会删除登录账号；账号认证与后续 jAccount 接入由学校统一处理。
 - 管理员查看学生记录、完整问卷、审计日志以及编辑报告等敏感操作会写入审计日志；审计日志按 180 天保留策略清理。
 
-详细字段边界、模型传输范围与保留期限见 [`docs/数据隐私与保留策略.md`](docs/数据隐私与保留策略.md)。本轮不包含 jAccount/登录方式改造、语音输入以及页脚主管单位和联系方式；页脚目前只提供产品名称和隐私入口。
+详细字段边界、模型传输范围与保留期限见 [`docs/数据隐私与保留策略.md`](docs/数据隐私与保留策略.md)。登录方式仍由学校侧负责；语音输入已提供统一后端接口，默认关闭，启用前需配置经过审批的转写供应商。
 
 ## 本地启动
 
@@ -127,6 +127,19 @@ DEEPSEEK_API_KEY=
 DEEPSEEK_BASE_URL=https://api.deepseek.com
 DEEPSEEK_MODEL=deepseek-chat
 LLM_TIMEOUT_SECONDS=180
+SPEECH_PROVIDER=disabled
+SPEECH_XFYUN_APP_ID=
+SPEECH_XFYUN_API_KEY=
+SPEECH_XFYUN_API_SECRET=
+SPEECH_XFYUN_BASE_URL=https://office-api-ist-dx.iflyaisol.com
+SPEECH_XFYUN_LANGUAGE=autodialect
+SPEECH_XFYUN_DOMAIN=edu
+SPEECH_XFYUN_POLL_INTERVAL_SECONDS=1.5
+SPEECH_XFYUN_POLL_TIMEOUT_SECONDS=120
+SPEECH_TIMEOUT_SECONDS=30
+SPEECH_MAX_FILE_MB=10
+SPEECH_DAILY_LIMIT=20
+SPEECH_QUOTA_TIMEZONE=Asia/Shanghai
 FRONTEND_ORIGINS=http://localhost:5173,http://localhost:8080,http://localhost
 VITE_API_BASE_URL=http://localhost:8000/api
 AUTH_SECRET=please-change-to-a-long-random-string
@@ -148,6 +161,8 @@ HTTP_PORT=8080
 ```
 
 `LLM_PROVIDER` 支持 `kimi` 和 `deepseek`，只会调用当前选中的通道。必须配置该通道对应的 API Key。模型未配置、超时或调用失败时，报告接口会直接返回错误，不会生成备用模板报告。
+
+语音转写通过 `POST /api/speech/transcribe` 统一接入。当前内置 `xfyun_file` 适配器，对接讯飞“录音文件转写大模型”：录音结束后上传文件，后端轮询订单并返回完整文字，不使用实时 WebSocket。启用时设置 `SPEECH_PROVIDER=xfyun_file`，并填写 `SPEECH_XFYUN_APP_ID`、`SPEECH_XFYUN_API_KEY`、`SPEECH_XFYUN_API_SECRET`。这三项只放在后端环境变量中，不要写入前端或提交到 Git。`SPEECH_PROVIDER=disabled` 时，录音不会保存，接口会返回功能未启用提示。
 
 生成任务配置说明：
 

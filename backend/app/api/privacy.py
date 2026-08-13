@@ -19,6 +19,6 @@ def delete_my_business_data(user=Depends(require_user)) -> dict[str, object]:
         cancel_generation_job(job_id)
     deleted = delete_user_business_data(user["id"])
     return {
-        "message": "你的问卷、画像、报告、版本、反馈和生成任务已清除；登录账号与当日生成次数计数仍保留，计数会在自然日结束后清零。",
+        "message": "你的问卷、画像、报告、版本、反馈和生成任务已清除；登录账号、当日报告生成次数和语音转写次数计数仍保留，计数会在自然日结束后清零。",
         "deleted": deleted,
     }

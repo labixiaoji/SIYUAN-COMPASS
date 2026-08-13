@@ -50,6 +50,8 @@ CREATE TABLE IF NOT EXISTS users (
     role TEXT NOT NULL DEFAULT 'student',
     generation_quota_day DATE,
     generation_quota_used INTEGER NOT NULL DEFAULT 0,
+    speech_quota_day DATE,
+    speech_quota_used INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
@@ -58,6 +60,10 @@ ALTER TABLE users
     ADD COLUMN IF NOT EXISTS generation_quota_day DATE;
 ALTER TABLE users
     ADD COLUMN IF NOT EXISTS generation_quota_used INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS speech_quota_day DATE;
+ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS speech_quota_used INTEGER NOT NULL DEFAULT 0;
 
 CREATE TABLE IF NOT EXISTS assessment_responses (
     id TEXT PRIMARY KEY,
@@ -199,6 +205,13 @@ class GenerationQuotaStorageError(RuntimeError):
         self.limit = limit
         self.used = used
         super().__init__(f"当日报告生成次数已达上限（{used}/{limit}）")
+
+
+class SpeechQuotaStorageError(RuntimeError):
+    def __init__(self, *, limit: int, used: int) -> None:
+        self.limit = limit
+        self.used = used
+        super().__init__(f"当日语音转写次数已达上限（{used}/{limit}）")
 
 
 @contextmanager
@@ -1195,6 +1208,70 @@ def clear_expired_generation_quota_counters(current_day: date) -> int:
                 updated_at = %s
             WHERE generation_quota_day IS NOT NULL
               AND generation_quota_day < %s
+            """,
+            (datetime.now(timezone.utc).isoformat(), current_day),
+        )
+    return result.rowcount
+
+
+def reserve_speech_quota(user_id: str, current_day: date, daily_limit: int) -> int:
+    """Atomically reserve one transcription attempt for a user.
+
+    The counter lives on the account so deleting business data cannot be used
+    to bypass the daily limit.  A non-positive limit disables enforcement but
+    still keeps the current day's usage available for operations checks.
+    """
+    with _connect() as connection:
+        quota_user = connection.execute(
+            """
+            SELECT speech_quota_day, speech_quota_used
+            FROM users
+            WHERE id = %s
+            FOR UPDATE
+            """,
+            (user_id,),
+        ).fetchone()
+        if not quota_user:
+            raise RuntimeError("语音转写用户不存在。")
+
+        used = (
+            int(quota_user["speech_quota_used"] or 0)
+            if quota_user["speech_quota_day"] == current_day
+            else 0
+        )
+        if daily_limit > 0 and used >= daily_limit:
+            raise SpeechQuotaStorageError(limit=daily_limit, used=used)
+
+        next_used = used + 1
+        connection.execute(
+            """
+            UPDATE users
+            SET speech_quota_day = %s,
+                speech_quota_used = %s,
+                updated_at = %s
+            WHERE id = %s
+            """,
+            (
+                current_day,
+                next_used,
+                datetime.now(timezone.utc).isoformat(),
+                user_id,
+            ),
+        )
+    return next_used
+
+
+def clear_expired_speech_quota_counters(current_day: date) -> int:
+    """Clear speech quota metadata after its configured local day ends."""
+    with _connect() as connection:
+        result = connection.execute(
+            """
+            UPDATE users
+            SET speech_quota_day = NULL,
+                speech_quota_used = 0,
+                updated_at = %s
+            WHERE speech_quota_day IS NOT NULL
+              AND speech_quota_day < %s
             """,
             (datetime.now(timezone.utc).isoformat(), current_day),
         )

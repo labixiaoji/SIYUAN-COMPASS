@@ -367,6 +367,65 @@ select {
   resize: vertical;
 }
 
+.voice-input-control {
+  margin-top: 8px;
+}
+
+.voice-input-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.voice-button {
+  align-items: center;
+  background: #f1f6ff;
+  border: 1px solid #b9d2f8;
+  border-radius: 6px;
+  color: var(--accent-dark);
+  cursor: pointer;
+  display: inline-flex;
+  font-size: 13px;
+  gap: 5px;
+  min-height: 36px;
+  padding: 6px 10px;
+}
+
+.voice-button:hover:not(:disabled) {
+  background: #e5efff;
+}
+
+.voice-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.voice-button-recording {
+  background: #fff1f0;
+  border-color: #f3b8b3;
+  color: #b42318;
+}
+
+.voice-button-secondary {
+  background: white;
+  border-color: var(--line);
+  color: var(--muted);
+}
+
+.voice-input-hint,
+.voice-input-status {
+  color: var(--muted);
+  display: block;
+  font-size: 12px;
+  line-height: 1.5;
+  margin-top: 5px;
+}
+
+.voice-input-status {
+  color: var(--accent-dark);
+}
+
 .choice-grid {
   display: grid;
   gap: 10px;

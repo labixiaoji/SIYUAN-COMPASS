@@ -4,15 +4,16 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000
 
 export async function apiRequest<T>(path: string, options?: RequestInit): Promise<T> {
   const token = getAuthToken();
+  const requestHeaders = new Headers(options?.headers);
+  if (!(options?.body instanceof FormData) && !requestHeaders.has("Content-Type")) {
+    requestHeaders.set("Content-Type", "application/json");
+  }
+  if (token) requestHeaders.set("Authorization", `Bearer ${token}`);
   let response: Response;
   try {
     response = await fetch(`${API_BASE_URL}${path}`, {
       ...options,
-      headers: {
-        "Content-Type": "application/json",
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        ...options?.headers
-      }
+      headers: requestHeaders
     });
   } catch (caught) {
     if (caught instanceof DOMException && caught.name === "AbortError") throw caught;

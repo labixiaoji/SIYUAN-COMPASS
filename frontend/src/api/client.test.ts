@@ -42,4 +42,20 @@ describe("apiRequest", () => {
 
     await expect(apiRequest("/assessment-jobs/job-a")).rejects.toBe(abortError);
   });
+
+  it("上传 FormData 时不手动覆盖浏览器生成的 multipart 边界", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ text: "你好" }), {
+      headers: { "Content-Type": "application/json" },
+      status: 200
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const body = new FormData();
+    body.append("audio", new Blob(["audio"], { type: "audio/webm" }), "recording.webm");
+
+    await apiRequest("/speech/transcribe", { method: "POST", body });
+
+    const request = fetchMock.mock.calls[0][1] as RequestInit;
+    expect(new Headers(request.headers).get("Content-Type")).toBeNull();
+    expect(request.body).toBe(body);
+  });
 });

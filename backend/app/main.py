@@ -14,10 +14,12 @@ from app.api.feedback import router as feedback_router
 from app.api.llm import router as llm_router
 from app.api.privacy import router as privacy_router
 from app.api.reports import router as reports_router
+from app.api.speech import router as speech_router
 from app.core.config import get_settings
 from app.services.generation_jobs import recover_generation_jobs
 from app.storage.json_db import (
     clear_expired_generation_quota_counters,
+    clear_expired_speech_quota_counters,
     delete_expired_admin_audit_logs,
     delete_expired_generation_jobs,
     ensure_admin_account,
@@ -33,9 +35,10 @@ DATA_MAINTENANCE_TASK: asyncio.Task[None] | None = None
 
 
 def run_data_maintenance() -> dict[str, int]:
-    quota_day = datetime.now(
+    generation_quota_day = datetime.now(
         ZoneInfo(settings.report_generation_quota_timezone)
     ).date()
+    speech_quota_day = datetime.now(ZoneInfo(settings.speech_quota_timezone)).date()
     result = {
         "generationJobs": delete_expired_generation_jobs(
             settings.generation_job_retention_days
@@ -45,17 +48,21 @@ def run_data_maintenance() -> dict[str, int]:
         ),
         "rawModelOutputs": purge_stored_raw_model_outputs(),
         "nonPersistedAssessmentFields": purge_non_persisted_assessment_fields(),
-        "generationQuotaCounters": clear_expired_generation_quota_counters(quota_day),
+        "generationQuotaCounters": clear_expired_generation_quota_counters(
+            generation_quota_day
+        ),
+        "speechQuotaCounters": clear_expired_speech_quota_counters(speech_quota_day),
     }
     logger.info(
         "data maintenance completed: generation_jobs=%d admin_audit_logs=%d "
         "raw_model_outputs=%d non_persisted_assessment_records=%d "
-        "generation_quota_counters=%d",
+        "generation_quota_counters=%d speech_quota_counters=%d",
         result["generationJobs"],
         result["adminAuditLogs"],
         result["rawModelOutputs"],
         result["nonPersistedAssessmentFields"],
         result["generationQuotaCounters"],
+        result["speechQuotaCounters"],
     )
     return result
 
@@ -119,6 +126,7 @@ def health() -> dict[str, str]:
 app.include_router(auth_router, prefix="/api")
 app.include_router(assessments_router, prefix="/api")
 app.include_router(reports_router, prefix="/api")
+app.include_router(speech_router, prefix="/api")
 app.include_router(feedback_router, prefix="/api")
 app.include_router(privacy_router, prefix="/api")
 app.include_router(admin_router, prefix="/api")

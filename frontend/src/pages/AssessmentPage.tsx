@@ -4,6 +4,7 @@ import { createAssessmentJob, fetchAssessmentJob } from "../api/assessments";
 import type { GenerationJobStatus } from "../api/assessments";
 import { useAuth } from "../auth/AuthContext";
 import { ChoiceGroup, RadioGroup, ScoreRows } from "../components/FormControls";
+import { VoiceInputButton } from "../components/VoiceInputButton";
 import {
   careerConfusionOptions,
   careerRiskPreferenceOptions,
@@ -48,6 +49,23 @@ import {
 } from "../storage/assessmentStorage";
 
 const steps = ["基本信息", "教育路径", "未来愿景", "价值能力兴趣", "学业与经历", "行动与承压", "核心困惑"];
+const voiceInputFields = new Set<keyof AssessmentResponseInput>([
+  "mastersPlan",
+  "phdPlan",
+  "educationPathReasonOther",
+  "fiveYearHobbiesSkills",
+  "tenYearHobbiesSkills",
+  "traitEvidence",
+  "immersiveActivities",
+  "favoriteKnowledgeAreas",
+  "selfDrivenActivities",
+  "transferReason",
+  "currentPreparationOther",
+  "preparationDetails",
+  "jobInfoChannelOther",
+  "careerConfusionOther",
+  "mainConfusionText"
+]);
 const generationSteps = [
   { progress: 5, label: "问卷已提交" },
   { progress: 10, label: "整理问卷" },
@@ -442,6 +460,22 @@ export function AssessmentPage() {
     });
   };
 
+  function appendVoiceText(key: keyof AssessmentResponseInput, text: string) {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    setDraftDirty(true);
+    setForm((prev) => {
+      const current = String(prev[key] || "").trim();
+      return { ...prev, [key]: `${current ? `${current}\n` : ""}${trimmed}` };
+    });
+    setFieldErrors((prev) => {
+      if (!prev[key]) return prev;
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+  }
+
   function markErrors(nextErrors: FieldErrors) {
     setFieldErrors(nextErrors);
     const entries = Object.entries(nextErrors) as Array<[FieldKey, string]>;
@@ -635,12 +669,20 @@ export function AssessmentPage() {
       <label>{requiredLabel(key, label)}</label>
       {questionFlags(key)}
       {multiline ? (
-        <textarea
-          className="textarea"
-          placeholder={placeholder}
-          value={(form[key] as string | undefined) || ""}
-          onChange={(event) => patch(key, event.target.value as never)}
-        />
+        <>
+          <textarea
+            className="textarea"
+            placeholder={placeholder}
+            value={(form[key] as string | undefined) || ""}
+            onChange={(event) => patch(key, event.target.value as never)}
+          />
+          {voiceInputFields.has(key) && (
+            <VoiceInputButton
+              disabled={submitting}
+              onTranscript={(text) => appendVoiceText(key, text)}
+            />
+          )}
+        </>
       ) : (
         <input
           className="input"
