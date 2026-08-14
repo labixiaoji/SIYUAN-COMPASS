@@ -1,6 +1,14 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.schemas.assessment import AssessmentResponseInput, AssessmentSubmitResult
+from app.schemas.assessment_draft import (
+    AssessmentDraft,
+    AssessmentDraftDeleteResult,
+    AssessmentDraftEnvelope,
+    AssessmentDraftUpsert,
+)
 from app.schemas.generation_job import GenerationJobCreated, GenerationJobStatus
 from app.services.assessment_validator import validate_assessment_fields
 from app.services.auth import require_user
@@ -13,8 +21,15 @@ from app.services.generation_jobs import (
     run_generation_job,
     start_generation_job,
 )
+from app.storage.json_db import (
+    AssessmentDraftConflictError,
+    delete_assessment_draft,
+    get_assessment_draft,
+    save_assessment_draft,
+)
 
 router = APIRouter(tags=["assessments"])
+logger = logging.getLogger(__name__)
 
 
 def _reserve_job(user_id: str, input_data: AssessmentResponseInput) -> GenerationJobStatus:
@@ -44,6 +59,49 @@ def _reserve_job(user_id: str, input_data: AssessmentResponseInput) -> Generatio
         ) from error
 
 
+def _clear_draft_after_job_created(user_id: str) -> None:
+    try:
+        delete_assessment_draft(user_id)
+    except Exception:
+        # A draft is a recovery aid; failure to remove it must not turn a
+        # successfully queued report into a failed submission.
+        logger.exception("failed to clear assessment draft after job creation")
+
+
+@router.get("/assessment-draft", response_model=AssessmentDraftEnvelope)
+def read_assessment_draft(user=Depends(require_user)) -> AssessmentDraftEnvelope:
+    draft = get_assessment_draft(user["id"])
+    return AssessmentDraftEnvelope(draft=AssessmentDraft.model_validate(draft) if draft else None)
+
+
+@router.put("/assessment-draft", response_model=AssessmentDraft)
+def upsert_assessment_draft(
+    payload: AssessmentDraftUpsert,
+    user=Depends(require_user),
+) -> AssessmentDraft:
+    try:
+        draft = save_assessment_draft(
+            user["id"],
+            payload.answers,
+            payload.currentStep,
+            version=payload.version,
+        )
+    except AssessmentDraftConflictError as error:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": "草稿已在其他设备更新，请刷新后选择最新版本。",
+                "draft": error.current,
+            },
+        ) from error
+    return AssessmentDraft.model_validate(draft)
+
+
+@router.delete("/assessment-draft", response_model=AssessmentDraftDeleteResult)
+def remove_assessment_draft(user=Depends(require_user)) -> AssessmentDraftDeleteResult:
+    return AssessmentDraftDeleteResult(deleted=delete_assessment_draft(user["id"]))
+
+
 @router.post("/assessment-jobs", response_model=GenerationJobCreated)
 async def create_assessment_job(
     input_data: AssessmentResponseInput,
@@ -58,6 +116,7 @@ async def create_assessment_job(
 
     authenticated_input = input_data.model_copy(update={"userId": user["id"]})
     job = _reserve_job(user["id"], authenticated_input)
+    _clear_draft_after_job_created(user["id"])
     start_generation_job(job.jobId)
     return GenerationJobCreated(jobId=job.jobId, status="queued")
 
@@ -102,6 +161,7 @@ async def submit_assessment(
 
     authenticated_input = input_data.model_copy(update={"userId": user["id"]})
     job = _reserve_job(user["id"], authenticated_input)
+    _clear_draft_after_job_created(user["id"])
     await run_generation_job(job.jobId)
     completed = get_generation_job(job.jobId)
     if not completed:

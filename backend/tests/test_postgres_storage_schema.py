@@ -13,6 +13,7 @@ class PostgresStorageSchemaTest(unittest.TestCase):
             "assessment_responses",
             "assessment_scores",
             "assessment_choices",
+            "assessment_drafts",
             "career_profiles",
             "reports",
             "report_versions",
@@ -62,6 +63,12 @@ class PostgresStorageSchemaTest(unittest.TestCase):
     def test_report_lookup_includes_account_display_name(self):
         self.assertIn("LEFT JOIN users ON users.id = reports.user_id", STORAGE_SOURCE)
         self.assertIn('record["accountDisplayName"]', STORAGE_SOURCE)
+
+    def test_assessment_drafts_are_account_scoped_and_expiring(self):
+        self.assertIn("user_id TEXT NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE", STORAGE_SOURCE)
+        self.assertIn("expires_at TIMESTAMPTZ NOT NULL", STORAGE_SOURCE)
+        self.assertIn("AssessmentDraftConflictError", STORAGE_SOURCE)
+        self.assertIn("WHERE user_id = %s", STORAGE_SOURCE)
 
 
 if __name__ == "__main__":

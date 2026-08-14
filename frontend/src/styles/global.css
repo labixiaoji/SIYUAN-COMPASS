@@ -223,6 +223,55 @@ select {
   margin: 0;
 }
 
+.draft-status {
+  align-items: center;
+  background: var(--accent-weak);
+  border: 1px solid var(--accent-line);
+  border-radius: 6px;
+  color: var(--muted);
+  display: flex;
+  font-size: 13px;
+  justify-content: space-between;
+  margin: -8px 0 16px;
+  min-height: 36px;
+  padding: 8px 12px;
+}
+
+.draft-status-offline,
+.draft-status-conflict {
+  background: var(--warn-soft);
+  border-color: var(--warn-line);
+  color: var(--warn-ink);
+}
+
+.draft-banner {
+  align-items: center;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-line);
+  border-radius: 8px;
+  display: flex;
+  gap: 20px;
+  justify-content: space-between;
+  margin: 0 0 20px;
+  padding: 16px 18px;
+}
+
+.draft-banner strong {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.draft-banner p {
+  color: var(--muted);
+  margin: 0;
+}
+
+.draft-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 8px;
+}
+
 .form-layout {
   display: grid;
   gap: 24px;
@@ -1690,6 +1739,16 @@ select {
   .dev-tools-panel {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .draft-banner {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .draft-actions .button {
+    flex: 1 1 0;
+    justify-content: center;
   }
 
   .admin-record-top {

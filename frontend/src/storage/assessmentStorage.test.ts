@@ -22,6 +22,22 @@ describe("assessmentStorage", () => {
     expect(readAssessmentDraft("user-a")).toEqual({ contactInfo: "a@example.com" });
   });
 
+  it("本地草稿不保存已停用的问卷字段", () => {
+    saveAssessmentDraft("user-a", {
+      collegeMajor: "计算机",
+      educationCertainty: 5,
+      englishCertificates: "CET-6"
+    });
+
+    expect(readAssessmentDraft("user-a")).toEqual({ collegeMajor: "计算机" });
+  });
+
+  it("报告预填也不保存已停用的问卷字段", () => {
+    saveAssessmentPrefill("user-a", { collegeMajor: "计算机", executionCase: "旧字段" });
+
+    expect(takeAssessmentPrefill("user-a")).toEqual({ collegeMajor: "计算机" });
+  });
+
   it("7 天后删除过期草稿", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-07-30T00:00:00Z"));

@@ -2,6 +2,13 @@ const DRAFT_PREFIX = "siyuan_assessment_draft_v3";
 const PREFILL_PREFIX = "siyuan_assessment_prefill_v2";
 const LEGACY_KEYS = ["siyuan_assessment_draft_v2", "siyuan_assessment_prefill_v1"];
 const SCOPED_PREFIXES = [`${DRAFT_PREFIX}:`, `${PREFILL_PREFIX}:`];
+const NON_PERSISTED_DRAFT_FIELDS = [
+  "educationCertainty",
+  "englishCertificates",
+  "academicExperiences",
+  "executionCase",
+  "negativeFeedbackReaction"
+] as const;
 
 export const ASSESSMENT_STORAGE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -51,6 +58,12 @@ function readScopedValue<T>(prefix: string, userId: string, now = Date.now()): T
 }
 
 export function saveAssessmentDraft<T>(userId: string, value: T) {
+  if (typeof value === "object" && value !== null && !Array.isArray(value)) {
+    const safeValue = { ...(value as Record<string, unknown>) };
+    NON_PERSISTED_DRAFT_FIELDS.forEach((field) => delete safeValue[field]);
+    writeScopedValue(DRAFT_PREFIX, userId, safeValue as T);
+    return;
+  }
   writeScopedValue(DRAFT_PREFIX, userId, value);
 }
 
@@ -63,6 +76,12 @@ export function removeAssessmentDraft(userId: string) {
 }
 
 export function saveAssessmentPrefill<T>(userId: string, value: T) {
+  if (typeof value === "object" && value !== null && !Array.isArray(value)) {
+    const safeValue = { ...(value as Record<string, unknown>) };
+    NON_PERSISTED_DRAFT_FIELDS.forEach((field) => delete safeValue[field]);
+    writeScopedValue(PREFILL_PREFIX, userId, safeValue as T);
+    return;
+  }
   writeScopedValue(PREFILL_PREFIX, userId, value);
 }
 

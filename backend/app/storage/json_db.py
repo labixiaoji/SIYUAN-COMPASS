@@ -11,7 +11,7 @@ from psycopg.types.json import Jsonb
 
 from app.core.config import get_settings
 from app.core.data_privacy import redact_obvious_contact_details
-from app.schemas.assessment import AssessmentResponse
+from app.schemas.assessment import AssessmentResponse, AssessmentResponseInput
 from app.schemas.generation_job import GenerationJobStatus
 from app.schemas.profile import CareerProfile
 from app.schemas.report import CareerBlueprintReport, ReportFeedback
@@ -87,6 +87,17 @@ CREATE TABLE IF NOT EXISTS assessment_choices (
     question_code TEXT NOT NULL,
     option_value TEXT NOT NULL,
     sort_order INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS assessment_drafts (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+    answers JSONB NOT NULL,
+    current_step INTEGER NOT NULL DEFAULT 0,
+    version INTEGER NOT NULL DEFAULT 1,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    expires_at TIMESTAMPTZ NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS career_profiles (
@@ -182,6 +193,8 @@ CREATE INDEX IF NOT EXISTS idx_assessment_responses_user_id
     ON assessment_responses(user_id);
 CREATE INDEX IF NOT EXISTS idx_assessment_choices_assessment_id
     ON assessment_choices(assessment_id);
+CREATE INDEX IF NOT EXISTS idx_assessment_drafts_expires_at
+    ON assessment_drafts(expires_at);
 CREATE INDEX IF NOT EXISTS idx_career_profiles_response_id
     ON career_profiles(response_id);
 CREATE INDEX IF NOT EXISTS idx_reports_user_id_created_at
@@ -212,6 +225,12 @@ class SpeechQuotaStorageError(RuntimeError):
         self.limit = limit
         self.used = used
         super().__init__(f"当日语音转写次数已达上限（{used}/{limit}）")
+
+
+class AssessmentDraftConflictError(RuntimeError):
+    def __init__(self, current: dict[str, Any]) -> None:
+        self.current = current
+        super().__init__("草稿已在其他设备更新")
 
 
 @contextmanager
@@ -421,6 +440,165 @@ def _generation_input_storage_record(input_data: dict[str, Any]) -> dict[str, An
     for field in ASSESSMENT_NON_PERSISTED_FIELDS:
         record.pop(field, None)
     return record
+
+
+def _draft_storage_record(answers: dict[str, Any]) -> dict[str, Any]:
+    """Keep only questionnaire fields that are safe and useful to restore.
+
+    Drafts are never sent to the model. They may contain partially completed
+    values, so they intentionally do not go through the complete response
+    validator. Unknown keys and request-only fields are discarded here to
+    prevent a client from turning the draft table into an arbitrary JSON store.
+    """
+    allowed_fields = set(AssessmentResponseInput.model_fields) - {"userId"}
+    record = {key: value for key, value in answers.items() if key in allowed_fields}
+    for field in ASSESSMENT_NON_PERSISTED_FIELDS:
+        record.pop(field, None)
+    return record
+
+
+def _assessment_draft_from_row(row: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not row:
+        return None
+    return {
+        "id": row["id"],
+        "userId": row["user_id"],
+        "answers": _draft_storage_record(dict(row["answers"] or {})),
+        "currentStep": int(row["current_step"]),
+        "version": int(row["version"]),
+        "createdAt": _iso_timestamp(row["created_at"]),
+        "updatedAt": _iso_timestamp(row["updated_at"]),
+        "expiresAt": _iso_timestamp(row["expires_at"]),
+    }
+
+
+def get_assessment_draft(user_id: str) -> dict[str, Any] | None:
+    """Return the current account's unexpired draft, if one exists."""
+    with _connect() as connection:
+        row = connection.execute(
+            """
+            SELECT id, user_id, answers, current_step, version,
+                   created_at, updated_at, expires_at
+            FROM assessment_drafts
+            WHERE user_id = %s
+            """,
+            (user_id,),
+        ).fetchone()
+        if row and row["expires_at"] <= datetime.now(timezone.utc):
+            connection.execute("DELETE FROM assessment_drafts WHERE id = %s", (row["id"],))
+            return None
+    return _assessment_draft_from_row(row)
+
+
+def save_assessment_draft(
+    user_id: str,
+    answers: dict[str, Any],
+    current_step: int,
+    *,
+    version: int = 0,
+    retention_days: int | None = None,
+) -> dict[str, Any]:
+    """Create or version a student's draft with optimistic concurrency."""
+    record = _draft_storage_record(answers)
+    current_step = max(0, min(current_step, 6))
+    retention = (
+        retention_days
+        if retention_days is not None
+        else get_settings().assessment_draft_retention_days
+    )
+    now = datetime.now(timezone.utc)
+    expires_at = now + timedelta(days=max(retention, 1))
+
+    with _connect() as connection:
+        # Serialize drafts for the same account. This also prevents two first
+        # saves from racing into the unique user_id constraint.
+        connection.execute("SELECT id FROM users WHERE id = %s FOR UPDATE", (user_id,))
+        row = connection.execute(
+            """
+            SELECT id, user_id, answers, current_step, version,
+                   created_at, updated_at, expires_at
+            FROM assessment_drafts
+            WHERE user_id = %s
+            FOR UPDATE
+            """,
+            (user_id,),
+        ).fetchone()
+        if row and row["expires_at"] <= now:
+            connection.execute("DELETE FROM assessment_drafts WHERE id = %s", (row["id"],))
+            row = None
+
+        if row:
+            current_version = int(row["version"])
+            if version != current_version:
+                raise AssessmentDraftConflictError(_assessment_draft_from_row(row) or {})
+            draft_id = row["id"]
+            next_version = current_version + 1
+            connection.execute(
+                """
+                UPDATE assessment_drafts
+                SET answers = %s,
+                    current_step = %s,
+                    version = %s,
+                    updated_at = %s,
+                    expires_at = %s
+                WHERE id = %s
+                """,
+                (Jsonb(record), current_step, next_version, now, expires_at, draft_id),
+            )
+            created_at = row["created_at"]
+        else:
+            if version not in {0, 1}:
+                raise AssessmentDraftConflictError({})
+            draft_id = str(uuid4())
+            next_version = 1
+            created_at = now
+            connection.execute(
+                """
+                INSERT INTO assessment_drafts (
+                    id, user_id, answers, current_step, version,
+                    created_at, updated_at, expires_at
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    draft_id,
+                    user_id,
+                    Jsonb(record),
+                    current_step,
+                    next_version,
+                    created_at,
+                    now,
+                    expires_at,
+                ),
+            )
+
+    return {
+        "id": draft_id,
+        "userId": user_id,
+        "answers": record,
+        "currentStep": current_step,
+        "version": next_version,
+        "createdAt": _iso_timestamp(created_at),
+        "updatedAt": now.isoformat(),
+        "expiresAt": expires_at.isoformat(),
+    }
+
+
+def delete_assessment_draft(user_id: str) -> bool:
+    with _connect() as connection:
+        result = connection.execute(
+            "DELETE FROM assessment_drafts WHERE user_id = %s",
+            (user_id,),
+        )
+    return result.rowcount > 0
+
+
+def delete_expired_assessment_drafts() -> int:
+    with _connect() as connection:
+        result = connection.execute(
+            "DELETE FROM assessment_drafts WHERE expires_at <= now()"
+        )
+    return result.rowcount
 
 
 def _lock_current_generation_claim(
@@ -1567,12 +1745,14 @@ def delete_user_business_data(user_id: str) -> dict[str, int]:
                 (SELECT COUNT(*) FROM career_profiles WHERE user_id = %s) AS profiles,
                 (SELECT COUNT(*) FROM reports WHERE user_id = %s) AS reports,
                 (SELECT COUNT(*) FROM report_feedback WHERE user_id = %s) AS feedbacks,
-                (SELECT COUNT(*) FROM generation_jobs WHERE user_id = %s) AS generation_jobs
+                (SELECT COUNT(*) FROM generation_jobs WHERE user_id = %s) AS generation_jobs,
+                (SELECT COUNT(*) FROM assessment_drafts WHERE user_id = %s) AS assessment_drafts
             """,
-            (user_id, user_id, user_id, user_id, user_id),
+            (user_id, user_id, user_id, user_id, user_id, user_id),
         ).fetchone()
         connection.execute("DELETE FROM generation_jobs WHERE user_id = %s", (user_id,))
         connection.execute("DELETE FROM report_feedback WHERE user_id = %s", (user_id,))
+        connection.execute("DELETE FROM assessment_drafts WHERE user_id = %s", (user_id,))
         # Delete explicitly by owner as well as by cascade so malformed legacy
         # cross-links cannot leave personal records behind.
         connection.execute("DELETE FROM reports WHERE user_id = %s", (user_id,))
@@ -1585,6 +1765,9 @@ def delete_user_business_data(user_id: str) -> dict[str, int]:
         "reports": int(counts["reports"]),
         "feedbacks": int(counts["feedbacks"]),
         "generationJobs": int(counts["generation_jobs"]),
+        # Older database adapters may not expose the newly added count while
+        # the deletion itself is still safe and idempotent.
+        "assessmentDrafts": int(counts.get("assessment_drafts", 0)),
     }
 
 

@@ -15,6 +15,7 @@ users                  用户账号
 assessment_responses   问卷单值答案
 assessment_scores      能力与兴趣量表分数
 assessment_choices     问卷多选答案
+assessment_drafts      当前账号的云端问卷草稿
 career_profiles        结构化人生画像
 reports                当前报告
 report_versions        报告历史版本
@@ -58,7 +59,7 @@ GET  /api/assessment-jobs/{jobId}
 
 本轮已经补充：
 
-- 问卷草稿和报告预填按用户隔离，保存在浏览器最多 7 天；切换账号不会读取其他用户草稿，并会清除上一账号在当前设备上的草稿；退出也会清除当前账号草稿。
+- 问卷草稿和报告预填按用户隔离；云端问卷草稿默认保留 30 天，浏览器本地草稿保留 7 天作为网络异常兜底。切换账号不会读取其他用户草稿，并会清除上一账号在当前设备上的草稿；退出也会清除当前账号草稿。
 - 问卷采集姓名、学号和联系方式（均为选填），性别及 5/10 年预期收入为必填；姓名、学号、联系方式和收入预期不会发送给 AI 服务。
 - 健康、精力和心理感受题不在题目前增加额外用途说明，统一遵循隐私政策中的数据处理规则。
 - 页面在手机宽度下使用单栏表单、可横向滚动的步骤与导航、适合触控的输入区和操作区；退出按钮仅在手机端隐藏。
@@ -149,6 +150,7 @@ REPORT_GENERATION_QUOTA_TIMEZONE=Asia/Shanghai
 GENERATION_JOB_LEASE_SECONDS=300
 GENERATION_JOB_HEARTBEAT_SECONDS=30
 GENERATION_JOB_RETENTION_DAYS=30
+ASSESSMENT_DRAFT_RETENTION_DAYS=30
 ADMIN_AUDIT_RETENTION_DAYS=180
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD=admin12345
@@ -171,7 +173,10 @@ HTTP_PORT=8080
 - `GENERATION_JOB_LEASE_SECONDS`：任务租约时长；应大于心跳间隔。
 - `GENERATION_JOB_HEARTBEAT_SECONDS`：运行中任务续租间隔。
 - `GENERATION_JOB_RETENTION_DAYS`：成功、失败和取消任务的状态记录保留天数。
+- `ASSESSMENT_DRAFT_RETENTION_DAYS`：云端问卷草稿保留天数，默认 30 天；过期草稿由每日维护任务自动清理。
 - `ADMIN_AUDIT_RETENTION_DAYS`：管理员审计日志保留天数，默认 180 天。
+
+问卷填写过程会按当前账号自动保存云端草稿，并保留浏览器本地草稿作为网络异常时的兜底。草稿只保存用于恢复填写的问卷字段，不会进入大模型生成输入；提交成功创建报告任务后自动删除，学生执行“清除我的全部业务数据”时也会删除。多个设备同时填写时使用版本号保护，检测到冲突会提示刷新后恢复最新版本。
 
 首次启动时，后端会根据 `ADMIN_USERNAME` 和 `ADMIN_PASSWORD` 创建管理员账号。部署或提供给真实学生使用前，必须修改默认管理员密码和 `AUTH_SECRET`。
 

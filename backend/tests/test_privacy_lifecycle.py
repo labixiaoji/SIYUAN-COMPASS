@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sys
 from contextlib import contextmanager
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from types import ModuleType, SimpleNamespace
 from unittest import IsolatedAsyncioTestCase, TestCase
 from unittest.mock import Mock, patch
@@ -135,6 +135,57 @@ class DataMinimizationTest(TestCase):
         self.assertEqual(params[0], list(json_db.ASSESSMENT_NON_PERSISTED_FIELDS))
         self.assertEqual(params[1], list(json_db.ASSESSMENT_NON_PERSISTED_FIELDS))
 
+    def test_assessment_draft_storage_removes_unknown_and_no_store_fields(self):
+        stored = json_db._draft_storage_record(
+            {
+                "collegeMajor": "计算机",
+                "educationCertainty": 5,
+                "unexpected": "must not persist",
+                "userId": "attacker-user",
+            }
+        )
+
+        self.assertEqual(stored, {"collegeMajor": "计算机"})
+
+    def test_draft_save_locks_owner_and_uses_versioned_upsert(self):
+        connection = Mock()
+        missing_draft = Mock()
+        missing_draft.fetchone.return_value = None
+        connection.execute.side_effect = [Mock(), missing_draft, Mock()]
+        with patch.object(json_db, "_connect", return_value=fake_connection(connection)), patch.object(
+            json_db, "get_settings", return_value=SimpleNamespace(assessment_draft_retention_days=30)
+        ):
+            draft = json_db.save_assessment_draft(
+                "user-1", {"collegeMajor": "计算机", "userId": "spoof"}, 2
+            )
+
+        self.assertEqual(draft["userId"], "user-1")
+        self.assertEqual(draft["version"], 1)
+        self.assertEqual(draft["answers"], {"collegeMajor": "计算机"})
+        self.assertIn("FOR UPDATE", connection.execute.call_args_list[1].args[0])
+
+    def test_draft_save_rejects_stale_version(self):
+        connection = Mock()
+        existing_draft = Mock()
+        existing_draft.fetchone.return_value = {
+            "id": "draft-1",
+            "user_id": "user-1",
+            "answers": {"collegeMajor": "计算机"},
+            "current_step": 2,
+            "version": 4,
+            "created_at": datetime.now(timezone.utc) - timedelta(minutes=5),
+            "updated_at": datetime.now(timezone.utc),
+            "expires_at": datetime.now(timezone.utc) + timedelta(days=30),
+        }
+        connection.execute.side_effect = [Mock(), existing_draft]
+        with patch.object(json_db, "_connect", return_value=fake_connection(connection)), patch.object(
+            json_db, "get_settings", return_value=SimpleNamespace(assessment_draft_retention_days=30)
+        ):
+            with self.assertRaises(json_db.AssessmentDraftConflictError) as raised:
+                json_db.save_assessment_draft("user-1", {"collegeMajor": "错误覆盖"}, 2, version=3)
+
+        self.assertEqual(raised.exception.current["version"], 4)
+
 
 class PrivacyDeletionTest(TestCase):
     def test_single_report_delete_cascades_and_audits_admin_in_one_transaction(self):
@@ -183,6 +234,7 @@ class PrivacyDeletionTest(TestCase):
                     "reports": 1,
                     "feedbacks": 1,
                     "generation_jobs": 1,
+                    "assessment_drafts": 1,
                 }
             return result
 
@@ -195,6 +247,7 @@ class PrivacyDeletionTest(TestCase):
         for table in [
             "generation_jobs",
             "report_feedback",
+            "assessment_drafts",
             "reports",
             "career_profiles",
             "assessment_responses",
@@ -350,6 +403,7 @@ class AdminAuditTest(TestCase):
 
 
 class MaintenanceLifecycleTest(TestCase):
+    @patch.object(main, "delete_expired_assessment_drafts", return_value=7)
     @patch.object(main, "clear_expired_speech_quota_counters", return_value=6)
     @patch.object(main, "clear_expired_generation_quota_counters", return_value=5)
     @patch.object(main, "purge_non_persisted_assessment_fields", return_value=4)
@@ -364,10 +418,12 @@ class MaintenanceLifecycleTest(TestCase):
         assessment_fields,
         quota_counters,
         speech_quota_counters,
+        assessment_drafts,
     ):
         result = main.run_data_maintenance()
 
         generation_jobs.assert_called_once_with(main.settings.generation_job_retention_days)
+        assessment_drafts.assert_called_once_with()
         audit_logs.assert_called_once_with(
             retention_days=main.settings.admin_audit_retention_days
         )
@@ -379,6 +435,7 @@ class MaintenanceLifecycleTest(TestCase):
             result,
             {
                 "generationJobs": 1,
+                "assessmentDrafts": 7,
                 "adminAuditLogs": 2,
                 "rawModelOutputs": 3,
                 "nonPersistedAssessmentFields": 4,

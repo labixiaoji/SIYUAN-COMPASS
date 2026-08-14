@@ -1,7 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { createAssessmentJob, fetchAssessmentJob } from "../api/assessments";
-import type { GenerationJobStatus } from "../api/assessments";
+import {
+  deleteAssessmentDraft as deleteCloudAssessmentDraft,
+  fetchAssessmentDraft,
+  createAssessmentJob,
+  fetchAssessmentJob,
+  saveAssessmentDraft as saveCloudAssessmentDraft
+} from "../api/assessments";
+import type { AssessmentDraft, GenerationJobStatus } from "../api/assessments";
 import { useAuth } from "../auth/AuthContext";
 import { ChoiceGroup, RadioGroup, ScoreRows } from "../components/FormControls";
 import { VoiceInputButton } from "../components/VoiceInputButton";
@@ -364,6 +370,23 @@ function isAbortError(error: unknown) {
   return error instanceof DOMException && error.name === "AbortError";
 }
 
+function draftTimeLabel(value: string | null) {
+  if (!value) return "";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "" : date.toLocaleString("zh-CN", { hour12: false });
+}
+
+function draftSyncLabel(status: DraftSyncState, savedAt: string | null) {
+  if (status === "loading") return "正在读取云端草稿…";
+  if (status === "saving") return "正在保存草稿…";
+  if (status === "saved") return savedAt ? `草稿已保存 · ${draftTimeLabel(savedAt)}` : "草稿已保存";
+  if (status === "conflict") return "草稿在其他设备有更新，请刷新页面后恢复最新版本";
+  if (status === "offline") return "云端保存暂时失败，已保留本地草稿";
+  return "草稿会自动保存";
+}
+
+type DraftSyncState = "idle" | "loading" | "saving" | "saved" | "offline" | "conflict";
+
 function waitForNextPoll(signal: AbortSignal) {
   return new Promise<void>((resolve, reject) => {
     const handleAbort = () => {
@@ -395,6 +418,13 @@ export function AssessmentPage() {
   const [draftReady, setDraftReady] = useState(false);
   const [draftDirty, setDraftDirty] = useState(false);
   const [draftOwnerId, setDraftOwnerId] = useState<string | null>(null);
+  const [cloudDraftPrompt, setCloudDraftPrompt] = useState<AssessmentDraft | null>(null);
+  const [draftSync, setDraftSync] = useState<DraftSyncState>("idle");
+  const [draftSavedAt, setDraftSavedAt] = useState<string | null>(null);
+  const draftVersionRef = useRef(0);
+  const draftRequestRef = useRef<AbortController | null>(null);
+  const draftSaveTimerRef = useRef<number | null>(null);
+  const draftSaveControllerRef = useRef<AbortController | null>(null);
   const [generationJob, setGenerationJob] = useState<GenerationJobStatus | null>(null);
   const mountedRef = useRef(true);
   const pollControllerRef = useRef<AbortController | null>(null);
@@ -404,16 +434,29 @@ export function AssessmentPage() {
     return () => {
       mountedRef.current = false;
       pollControllerRef.current?.abort();
+      draftRequestRef.current?.abort();
+      draftSaveControllerRef.current?.abort();
+      if (draftSaveTimerRef.current !== null) window.clearTimeout(draftSaveTimerRef.current);
     };
   }, []);
 
   useEffect(() => {
     pollControllerRef.current?.abort();
     pollControllerRef.current = null;
+    draftRequestRef.current?.abort();
+    draftRequestRef.current = null;
+    draftSaveControllerRef.current?.abort();
+    draftSaveControllerRef.current = null;
+    if (draftSaveTimerRef.current !== null) window.clearTimeout(draftSaveTimerRef.current);
+    draftSaveTimerRef.current = null;
     setSubmitting(false);
     setDraftReady(false);
     setDraftOwnerId(null);
     setDraftDirty(false);
+    setCloudDraftPrompt(null);
+    setDraftSync("idle");
+    setDraftSavedAt(null);
+    draftVersionRef.current = 0;
     setStep(0);
     setForm(initialForm);
     setError("");
@@ -426,28 +469,83 @@ export function AssessmentPage() {
       setForm(formFromPartial(prefill));
       setDraftDirty(true);
       removeAssessmentDraft(user.id);
+      void deleteCloudAssessmentDraft().catch(() => undefined);
       setDraftOwnerId(user.id);
       setDraftReady(true);
       return;
     }
 
     const saved = readAssessmentDraft<AssessmentPrefill>(user.id);
-    if (saved) {
-      if (window.confirm("检测到当前账号 7 天内保存的未提交草稿，是否恢复？")) {
+    const controller = new AbortController();
+    draftRequestRef.current = controller;
+    setDraftSync("loading");
+    fetchAssessmentDraft(controller.signal).then(({ draft }) => {
+      if (!mountedRef.current || controller.signal.aborted) return;
+      if (draft) {
+        draftVersionRef.current = draft.version;
+        setForm(formFromPartial(draft.answers));
+        setStep(draft.currentStep);
+        setDraftDirty(false);
+        setCloudDraftPrompt(draft);
+        setDraftSavedAt(draft.updatedAt);
+        setDraftSync("saved");
+      } else if (saved) {
+        if (window.confirm("检测到当前账号本地保存的未提交草稿，是否恢复？")) {
+          setForm(formFromPartial(saved));
+          setDraftDirty(true);
+        } else {
+          removeAssessmentDraft(user.id);
+        }
+        setDraftSync("idle");
+      } else {
+        setDraftSync("idle");
+      }
+      setDraftOwnerId(user.id);
+      setDraftReady(true);
+    }).catch((caught) => {
+      if (!mountedRef.current || controller.signal.aborted || isAbortError(caught)) return;
+      if (saved && window.confirm("云端草稿暂时无法读取，检测到本地草稿，是否恢复？")) {
         setForm(formFromPartial(saved));
         setDraftDirty(true);
-      } else {
-        removeAssessmentDraft(user.id);
       }
-    }
-    setDraftOwnerId(user.id);
-    setDraftReady(true);
+      setDraftSync("offline");
+      setDraftOwnerId(user.id);
+      setDraftReady(true);
+    });
+    return () => controller.abort();
   }, [user?.id]);
 
   useEffect(() => {
-    if (!user || draftOwnerId !== user.id || !draftReady || !draftDirty || submitting) return;
+    if (!user || draftOwnerId !== user.id || !draftReady || !draftDirty || submitting || cloudDraftPrompt) return;
     saveAssessmentDraft(user.id, form);
-  }, [draftDirty, draftOwnerId, draftReady, form, submitting, user]);
+    setDraftSync("saving");
+    if (draftSaveTimerRef.current !== null) window.clearTimeout(draftSaveTimerRef.current);
+    const controller = new AbortController();
+    draftSaveControllerRef.current?.abort();
+    draftSaveControllerRef.current = controller;
+    draftSaveTimerRef.current = window.setTimeout(() => {
+      void saveCloudAssessmentDraft(
+        { answers: form, currentStep: step, version: draftVersionRef.current },
+        controller.signal
+      ).then((draft) => {
+        if (!mountedRef.current || controller.signal.aborted) return;
+        draftVersionRef.current = draft.version;
+        setDraftSavedAt(draft.updatedAt);
+        setDraftSync("saved");
+        if (draftSaveControllerRef.current === controller) draftSaveControllerRef.current = null;
+      }).catch((caught) => {
+        if (!mountedRef.current || controller.signal.aborted || isAbortError(caught)) return;
+        setDraftSync(caught instanceof Error && "status" in caught && caught.status === 409 ? "conflict" : "offline");
+        if (draftSaveControllerRef.current === controller) draftSaveControllerRef.current = null;
+      });
+    }, 900);
+    return () => {
+      if (draftSaveTimerRef.current !== null) window.clearTimeout(draftSaveTimerRef.current);
+      draftSaveTimerRef.current = null;
+      controller.abort();
+      if (draftSaveControllerRef.current === controller) draftSaveControllerRef.current = null;
+    };
+  }, [cloudDraftPrompt, draftDirty, draftOwnerId, draftReady, form, step, submitting, user]);
 
   const patch = <K extends keyof AssessmentResponseInput>(key: K, value: AssessmentResponseInput[K]) => {
     setDraftDirty(true);
@@ -518,7 +616,10 @@ export function AssessmentPage() {
         setGenerationJob(job);
 
         if (job.status === "success" && job.reportId && job.userId) {
-          if (user) removeAssessmentDraft(user.id);
+          if (user) {
+            removeAssessmentDraft(user.id);
+            void deleteCloudAssessmentDraft().catch(() => undefined);
+          }
           navigate(`/reports/${job.reportId}`);
           return;
         }
@@ -569,8 +670,41 @@ export function AssessmentPage() {
   }
 
   function goToStep(nextStep: number) {
+    setDraftDirty(true);
     setStep(nextStep);
     window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function continueCloudDraft() {
+    if (cloudDraftPrompt) {
+      setForm(formFromPartial(cloudDraftPrompt.answers));
+      setStep(cloudDraftPrompt.currentStep);
+    }
+    setCloudDraftPrompt(null);
+    setDraftDirty(true);
+  }
+
+  function discardCloudDraft() {
+    if (draftSaveTimerRef.current !== null) window.clearTimeout(draftSaveTimerRef.current);
+    draftSaveTimerRef.current = null;
+    draftSaveControllerRef.current?.abort();
+    draftSaveControllerRef.current = null;
+    setCloudDraftPrompt(null);
+    setDraftDirty(false);
+    setDraftSync("idle");
+    setDraftSavedAt(null);
+    draftVersionRef.current = 0;
+    setStep(0);
+    setForm(initialForm);
+    setDraftOwnerId(user?.id || null);
+    if (user) {
+      removeAssessmentDraft(user.id);
+      void deleteCloudAssessmentDraft().catch(() => undefined);
+    }
+  }
+
+  function refreshAfterDraftConflict() {
+    window.location.reload();
   }
 
   const currentGradeOptions = gradeOptionsByStage[form.educationStage] ?? gradeOptionsByStage["本科"];
@@ -721,6 +855,26 @@ export function AssessmentPage() {
         <h1>生涯规划问卷</h1>
         <p>请尽量填写具体。你的回答仅用于生成个人生涯规划报告和产品优化分析。</p>
       </div>
+
+      {draftReady && (
+        <div className={`draft-status draft-status-${draftSync}`} role="status">
+          <span>{draftSyncLabel(draftSync, draftSavedAt)}</span>
+          {draftSync === "conflict" && <button className="text-link" type="button" onClick={refreshAfterDraftConflict}>刷新并恢复</button>}
+        </div>
+      )}
+
+      {cloudDraftPrompt && (
+        <section className="draft-banner" role="alert">
+          <div>
+            <strong>检测到云端未完成草稿</strong>
+            <p>上次保存于 {draftTimeLabel(cloudDraftPrompt.updatedAt)}，是否继续填写？</p>
+          </div>
+          <div className="draft-actions">
+            <button className="button" type="button" onClick={continueCloudDraft}>继续填写</button>
+            <button className="button secondary" type="button" onClick={discardCloudDraft}>重新开始</button>
+          </div>
+        </section>
+      )}
 
       {showDevTools && (
         <section className="dev-tools-panel">

@@ -21,6 +21,7 @@ from app.storage.json_db import (
     clear_expired_generation_quota_counters,
     clear_expired_speech_quota_counters,
     delete_expired_admin_audit_logs,
+    delete_expired_assessment_drafts,
     delete_expired_generation_jobs,
     ensure_admin_account,
     ensure_storage,
@@ -43,6 +44,7 @@ def run_data_maintenance() -> dict[str, int]:
         "generationJobs": delete_expired_generation_jobs(
             settings.generation_job_retention_days
         ),
+        "assessmentDrafts": delete_expired_assessment_drafts(),
         "adminAuditLogs": delete_expired_admin_audit_logs(
             retention_days=settings.admin_audit_retention_days
         ),
@@ -54,10 +56,11 @@ def run_data_maintenance() -> dict[str, int]:
         "speechQuotaCounters": clear_expired_speech_quota_counters(speech_quota_day),
     }
     logger.info(
-        "data maintenance completed: generation_jobs=%d admin_audit_logs=%d "
+        "data maintenance completed: generation_jobs=%d assessment_drafts=%d admin_audit_logs=%d "
         "raw_model_outputs=%d non_persisted_assessment_records=%d "
         "generation_quota_counters=%d speech_quota_counters=%d",
         result["generationJobs"],
+        result["assessmentDrafts"],
         result["adminAuditLogs"],
         result["rawModelOutputs"],
         result["nonPersistedAssessmentFields"],
