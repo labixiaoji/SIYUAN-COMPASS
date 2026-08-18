@@ -11,13 +11,13 @@
   --accent-soft: #eaf3ff;
   --accent-weak: #f5f9ff;
   --accent-line: #b9d8ff;
-  --success: #3f7211;
+  --success: #5a9218;
   --success-soft: #f1f7e9;
   --success-line: #bdd59b;
-  --warn: #f5a41c;
-  --warn-ink: #8a5400;
-  --warn-soft: #fff7e8;
-  --warn-line: #ffd38a;
+  --warn: #fa541c;
+  --warn-ink: #a13b00;
+  --warn-soft: #fff2e8;
+  --warn-line: #ffbb96;
   --danger: #c8171e;
   --danger-soft: #fff1f2;
   --danger-line: #efb0b4;
@@ -33,7 +33,7 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--ink);
-  font-family: Arial, "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Arial, sans-serif;
   min-width: 0;
   overflow-x: hidden;
 }
@@ -118,6 +118,7 @@ select {
   letter-spacing: 0;
   line-height: 1.05;
   margin: 0 0 24px;
+  text-wrap: balance;
 }
 
 .lead {
@@ -165,7 +166,7 @@ select {
   cursor: pointer;
   display: inline-flex;
   font-weight: 700;
-  min-height: 44px;
+  min-height: 42px;
   padding: 0 18px;
 }
 
@@ -764,7 +765,7 @@ select {
 
 .admin-record-card:target {
   border-color: var(--warn);
-  box-shadow: 0 0 0 3px rgba(245, 164, 28, 0.2);
+  box-shadow: 0 0 0 3px rgba(250, 84, 28, 0.2);
 }
 
 .admin-records > .admin-section-head {
@@ -885,7 +886,7 @@ select {
 }
 
 .admin-pagination .button {
-  min-height: 40px;
+  min-height: 42px;
   padding: 0 16px;
 }
 
@@ -941,7 +942,7 @@ select {
 }
 
 .admin-record-actions .button {
-  min-height: 38px;
+  min-height: 42px;
   padding: 0 14px;
 }
 
@@ -980,7 +981,7 @@ select {
 
 .admin-block-button {
   margin-top: 12px;
-  min-height: 38px;
+  min-height: 42px;
   padding: 0 14px;
 }
 
@@ -1582,45 +1583,74 @@ select {
     width: min(100% - 24px, 1120px);
   }
 
+  .topbar {
+    background: var(--accent);
+    backdrop-filter: none;
+    border-bottom-color: transparent;
+    height: 72px;
+  }
+
   .topbar-inner {
-    align-items: stretch;
-    flex-wrap: wrap;
-    min-height: 0;
-    padding-top: 10px;
+    align-items: center;
+    flex-wrap: nowrap;
+    gap: 12px;
+    height: 71px;
+    min-height: 71px;
+    padding: 0;
   }
 
   .brand {
-    font-size: 15px;
-    line-height: 1.5;
-    padding: 4px 0 8px;
+    color: #ffffff;
+    flex: 1 1 auto;
+    font-size: 18px;
+    line-height: 1.2;
+    min-width: 0;
+    overflow: hidden;
+    padding: 0;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .nav {
-    gap: 4px;
-    margin: 0 -4px;
+    color: rgba(255, 255, 255, 0.88);
+    flex: 0 1 auto;
+    gap: 0;
+    margin: 0;
+    max-width: 58%;
+    min-width: 0;
     overflow-x: auto;
-    padding-bottom: 6px;
+    padding: 0;
     scrollbar-width: none;
-    width: calc(100% + 8px);
+    width: auto;
   }
 
   .nav::-webkit-scrollbar {
     display: none;
   }
 
+  .nav .active {
+    color: #ffffff;
+  }
+
   .nav a,
   .nav-user,
   .nav-button {
     align-items: center;
+    color: inherit;
     display: inline-flex;
     flex: 0 0 auto;
     min-height: 44px;
-    padding: 0 10px;
+    padding: 0 8px;
     white-space: nowrap;
   }
 
   .nav-user {
     margin-left: auto;
+  }
+
+  .nav a:focus-visible,
+  .nav-button:focus-visible {
+    box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.35);
   }
 
   .nav-logout {
@@ -1862,7 +1892,21 @@ select {
   }
 
   .page-title h1 {
-    font-size: 25px;
+    font-size: 24px;
+  }
+
+  .hero h1 {
+    font-size: 32px;
+    line-height: 1.2;
+  }
+
+  .lead {
+    font-size: 16px;
+    line-height: 1.75;
+  }
+
+  .auth-card h1 {
+    font-size: 24px;
   }
 
   .panel,

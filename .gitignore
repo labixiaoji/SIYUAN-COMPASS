@@ -19,3 +19,9 @@ backend/.venv/
 
 data/*.json
 !data/.gitkeep
+skills-lock.json
+
+
+# 外部规范与本地开发待办，不纳入版本库
+docs/交我办移动端设计规范.pdf
+docs/TODO.md
