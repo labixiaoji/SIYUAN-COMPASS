@@ -1,273 +1,60 @@
 # 大学生生涯规划智能小助手
 
-大学生生涯规划智能小助手采用前后端分离结构：
+一个面向学生的生涯规划问卷与 AI 报告系统，采用 React、FastAPI、PostgreSQL 和 Docker Compose。
 
-```text
-frontend/  React + TypeScript + Vite
-backend/   Python + FastAPI
-postgres  PostgreSQL 数据库
-```
+## 文档
 
-生产环境使用 PostgreSQL 保存数据，并按业务对象拆分表：
+- [01-问卷与报告规范](docs/01-问卷与报告规范.md)
+- [02-系统实现文档](docs/02-系统实现文档.md)
+- [03-部署与运维文档](docs/03-部署与运维文档.md)
+- [04-数据隐私与保留策略](docs/04-数据隐私与保留策略.md)
+- [05-开发与测试文档](docs/05-开发与测试文档.md)
+- [06-版本更新记录](docs/06-版本更新记录.md)
 
-```text
-users                  用户账号
-assessment_responses   问卷单值答案
-assessment_scores      能力与兴趣量表分数
-assessment_choices     问卷多选答案
-assessment_drafts      当前账号的云端问卷草稿
-career_profiles        结构化人生画像
-reports                当前报告
-report_versions        报告历史版本
-generation_jobs        生成任务
-report_feedback        报告反馈
-admin_audit_logs        管理员操作记录
-```
+## 快速开始
 
-各表通过 UUID 关联，不使用用户名建立关系。画像和报告正文等复杂结构使用
-`JSONB` 保存，核心关联字段单独建列，方便后续查询和迁移。
+项目统一使用根目录的 .env 文件。首次运行：
 
-系统包含学生账号和管理员账号：
-
-- 学生注册/登录后填写问卷，报告自动归入当前账号，并可在“我的报告”中查看历史记录。
-- 管理员可查看全部学生生成记录、打开报告，并人工修改报告标题和正文。
-- 学生只能访问自己的生成任务、报告和反馈页面。
-
-报告生成采用两阶段大模型流程：
-
-```text
-问卷回答
-  -> 依据每道题的解释规则生成结构化用户画像
-  -> 校验证据、反证、矛盾、信息缺口和 Plan A / Plan B / Plan C
-  -> 基于原始回答和结构化画像生成六模块报告
-```
-
-画像会先经过结构校验，可用但缺少辅助字段时记录质量警告。系统长期保存经过校验的结构化画像，不保存大模型原始输出；发给模型的数据会排除姓名、学号、联系方式、收入预期和内部 ID 等不必要字段。报告首次未通过质量门禁时会自动要求模型完整修复一次，仍不合格才将任务标记为失败。
-
-前端使用生成任务接口展示实时阶段：
-
-```text
-POST /api/assessment-jobs
-GET  /api/assessment-jobs/{jobId}
-```
-
-生成任务及经过最小化处理的待处理输入保存在 PostgreSQL 中，并通过租约和心跳避免多个后端实例重复处理。服务重启后会恢复未完成任务；任务成功、失败或取消时会清除临时输入。默认每名学生每天最多创建 3 次生成任务，配额计数保存在登录账号的当日计数中，因此删除报告或业务数据不会绕过额度；终态任务记录保留 30 天，这些参数均可通过环境变量调整。
-
-原有 `POST /api/assessments` 同步接口仍然保留，适合通过 ApiPost 直接测试。
-
-## 隐私、移动端与数据管理
-
-本轮已经补充：
-
-- 问卷草稿和报告预填按用户隔离；云端问卷草稿默认保留 30 天，浏览器本地草稿保留 7 天作为网络异常兜底。切换账号不会读取其他用户草稿，并会清除上一账号在当前设备上的草稿；退出也会清除当前账号草稿。
-- 问卷采集姓名、学号和联系方式（均为选填），性别及 5/10 年预期收入为必填；姓名、学号、联系方式和收入预期不会发送给 AI 服务。
-- 健康、精力和心理感受题不在题目前增加额外用途说明，统一遵循隐私政策中的数据处理规则。
-- 页面在手机宽度下使用单栏表单、可横向滚动的步骤与导航、适合触控的输入区和操作区；退出按钮仅在手机端隐藏。
-- 提供 `/privacy` 隐私政策与数据管理页面、单份报告删除、全部业务数据清除，以及未知路由的 404 页面。
-- 删除业务数据不会删除登录账号；账号认证与后续 jAccount 接入由学校统一处理。
-- 管理员查看学生记录、完整问卷、审计日志以及编辑报告等敏感操作会写入审计日志；审计日志按 180 天保留策略清理。
-
-详细字段边界、模型传输范围与保留期限见 [`docs/数据隐私与保留策略.md`](docs/数据隐私与保留策略.md)。登录方式仍由学校侧负责；语音输入已提供统一后端接口，默认关闭，启用前需配置经过审批的转写供应商。
-
-## 本地启动
-
-首次运行先在项目根目录创建唯一环境配置：
-
-```bash
+~~~bash
 cp .env.example .env
-```
+~~~
 
-至少填写选中模型通道的 API Key：
+至少填写当前模型通道的 API Key、AUTH_SECRET、ADMIN_PASSWORD 和 POSTGRES_PASSWORD。
 
-```text
-LLM_PROVIDER=kimi
-KIMI_API_KEY
-AUTH_SECRET
-ADMIN_PASSWORD
-POSTGRES_PASSWORD
-```
+本地 Docker 开发：
 
-如需改用 DeepSeek，将 `LLM_PROVIDER` 设为 `deepseek`，并填写 `DEEPSEEK_API_KEY`。
+~~~bash
+docker compose -f docker-compose.dev.yml up -d --build
+~~~
 
-后端：
+本地访问前端 http://localhost:5173，后端 http://localhost:8000。
 
-```bash
-cd backend
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8000
-```
+服务器生产部署：
 
-前端：
+~~~bash
+docker compose up -d --build
+~~~
 
-```bash
-cd frontend
-npm install
-npm run dev
-```
+生产配置、更新、日志和故障排查见部署与运维文档。
 
-访问地址：
+## 当前范围
 
-```text
-前端：http://localhost:5173
-后端：http://localhost:8000
-接口文档：http://localhost:8000/docs
-```
+- 学生可填写七步问卷、保存云端草稿、生成报告、查看历史报告和提交反馈。
+- 报告生成使用可恢复的 PostgreSQL 持久任务，默认不限制每日生成次数，可通过环境变量设置配额。
+- 管理员可查看学生记录、查看完整问卷、编辑报告并查询审计记录。
+- 语音转写接口已接入，默认关闭，启用前需要完成供应商配置和学校侧隐私审核。
+- 当前登录方式仅用于本地开发和联调，真实 jAccount 接入由学校侧负责。
 
-## 环境变量
+## 检查命令
 
-项目只保留根目录 `.env` 作为唯一环境配置文件。本地后端、本地前端和 Docker Compose 都读取这一份配置：
-
-```text
-LLM_PROVIDER=kimi
-KIMI_API_KEY=
-KIMI_BASE_URL=https://api.moonshot.cn/v1
-KIMI_MODEL=kimi-k2.6
-DEEPSEEK_API_KEY=
-DEEPSEEK_BASE_URL=https://api.deepseek.com
-DEEPSEEK_MODEL=deepseek-chat
-LLM_TIMEOUT_SECONDS=180
-SPEECH_PROVIDER=disabled
-SPEECH_XFYUN_APP_ID=
-SPEECH_XFYUN_API_KEY=
-SPEECH_XFYUN_API_SECRET=
-SPEECH_XFYUN_BASE_URL=https://office-api-ist-dx.iflyaisol.com
-SPEECH_XFYUN_LANGUAGE=autodialect
-SPEECH_XFYUN_DOMAIN=edu
-SPEECH_XFYUN_POLL_INTERVAL_SECONDS=1.5
-SPEECH_XFYUN_POLL_TIMEOUT_SECONDS=120
-SPEECH_TIMEOUT_SECONDS=30
-SPEECH_MAX_FILE_MB=10
-SPEECH_DAILY_LIMIT=20
-SPEECH_QUOTA_TIMEZONE=Asia/Shanghai
-FRONTEND_ORIGINS=http://localhost:5173,http://localhost:8080,http://localhost
-VITE_API_BASE_URL=http://localhost:8000/api
-AUTH_SECRET=please-change-to-a-long-random-string
-AUTH_TOKEN_HOURS=72
-REPORT_GENERATION_DAILY_LIMIT=3
-REPORT_GENERATION_QUOTA_TIMEZONE=Asia/Shanghai
-GENERATION_JOB_LEASE_SECONDS=300
-GENERATION_JOB_HEARTBEAT_SECONDS=30
-GENERATION_JOB_RETENTION_DAYS=30
-ASSESSMENT_DRAFT_RETENTION_DAYS=30
-ADMIN_AUDIT_RETENTION_DAYS=180
-ADMIN_USERNAME=admin
-ADMIN_PASSWORD=admin12345
-ADMIN_DISPLAY_NAME=系统管理员
-POSTGRES_DB=siyuan_compass
-POSTGRES_USER=siyuan
-POSTGRES_PASSWORD=please-change-postgres-password
-DATABASE_URL=postgresql://siyuan:please-change-postgres-password@localhost:5432/siyuan_compass
-HTTP_PORT=8080
-```
-
-`LLM_PROVIDER` 支持 `kimi` 和 `deepseek`，只会调用当前选中的通道。必须配置该通道对应的 API Key。模型未配置、超时或调用失败时，报告接口会直接返回错误，不会生成备用模板报告。
-
-语音转写通过 `POST /api/speech/transcribe` 统一接入。当前内置 `xfyun_file` 适配器，对接讯飞“录音文件转写大模型”：录音结束后上传文件，后端轮询订单并返回完整文字，不使用实时 WebSocket。启用时设置 `SPEECH_PROVIDER=xfyun_file`，并填写 `SPEECH_XFYUN_APP_ID`、`SPEECH_XFYUN_API_KEY`、`SPEECH_XFYUN_API_SECRET`。这三项只放在后端环境变量中，不要写入前端或提交到 Git。`SPEECH_PROVIDER=disabled` 时，录音不会保存，接口会返回功能未启用提示。
-
-生成任务配置说明：
-
-- `REPORT_GENERATION_DAILY_LIMIT`：每名学生每天允许创建的任务数；`0` 表示不限制。
-- `REPORT_GENERATION_QUOTA_TIMEZONE`：每日额度的自然日时区，默认 `Asia/Shanghai`。
-- `GENERATION_JOB_LEASE_SECONDS`：任务租约时长；应大于心跳间隔。
-- `GENERATION_JOB_HEARTBEAT_SECONDS`：运行中任务续租间隔。
-- `GENERATION_JOB_RETENTION_DAYS`：成功、失败和取消任务的状态记录保留天数。
-- `ASSESSMENT_DRAFT_RETENTION_DAYS`：云端问卷草稿保留天数，默认 30 天；过期草稿由每日维护任务自动清理。
-- `ADMIN_AUDIT_RETENTION_DAYS`：管理员审计日志保留天数，默认 180 天。
-
-问卷填写过程会按当前账号自动保存云端草稿，并保留浏览器本地草稿作为网络异常时的兜底。草稿只保存用于恢复填写的问卷字段，不会进入大模型生成输入；提交成功创建报告任务后自动删除，学生执行“清除我的全部业务数据”时也会删除。多个设备同时填写时使用版本号保护，检测到冲突会提示刷新后恢复最新版本。
-
-首次启动时，后端会根据 `ADMIN_USERNAME` 和 `ADMIN_PASSWORD` 创建管理员账号。部署或提供给真实学生使用前，必须修改默认管理员密码和 `AUTH_SECRET`。
-
-登录相关页面：
-
-```text
-学生登录：http://localhost:5173/login
-学生注册：http://localhost:5173/register
-管理员后台：http://localhost:5173/admin
-```
-
-当前仓库中的账号登录仅用于本地开发和联调，不代表已经完成真实 jAccount 集成。
-
-## 自动化检查
-
-后端包含报告质量、自动修复、生成任务恢复与模型数据最小化等单元测试；前端包含草稿隔离与过期、未授权处理、404、隐私入口和手机端退出按钮标识等测试。
-
-```bash
+~~~bash
 cd backend
 python -m unittest discover -s tests
-```
+~~~
 
-```bash
+~~~bash
 cd frontend
 npm test
 npm run typecheck
 npm run build
-```
-
-这些命令验证应用逻辑和前端构建；不能替代连接真实 PostgreSQL、真实模型供应商、学校登录系统及生产反向代理的集成验收。
-
-## Docker 配置
-
-项目明确区分两套 Compose：
-
-- `docker-compose.yml`：服务器生产部署。
-- `docker-compose.dev.yml`：本地开发和热更新。
-
-### 服务器生产部署
-
-生产版使用 Nginx 托管前端，后端不直接暴露到公网，数据保存在 `postgres-data` volume。
-
-```bash
-cp .env.example .env
-docker compose up -d --build
-docker compose ps
-```
-
-更新服务器代码：
-
-```bash
-git pull
-docker compose up -d --build
-```
-
-修改服务器 `.env` 后：
-
-```bash
-docker compose up -d --force-recreate backend
-```
-
-### 本地开发
-
-本地必须显式指定开发文件：
-
-```bash
-docker compose -f docker-compose.dev.yml up -d --build
-```
-
-本地访问地址：
-
-```text
-前端：http://localhost:5173
-后端：http://localhost:8000
-```
-
-开发版特点：
-
-- 使用项目名 `siyuan-compass-dev` 和数据库 volume `postgres-dev-data`。
-- 后端挂载 `backend/app`，并使用 `uvicorn --reload`。
-- 前端挂载 `frontend`，并运行 Vite dev server。
-- 前端依赖安装在 Docker volume `frontend-node-modules`，不会覆盖宿主机的 `frontend/node_modules`。
-
-停止开发模式：
-
-```bash
-docker compose -f docker-compose.dev.yml down
-```
-
-本地更新代码后通常会热更新；修改 `.env` 后需要执行：
-
-```bash
-docker compose -f docker-compose.dev.yml up -d --force-recreate backend
-```
+~~~
