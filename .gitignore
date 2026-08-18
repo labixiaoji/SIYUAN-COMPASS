@@ -17,6 +17,19 @@ __pycache__/
 .venv/
 backend/.venv/
 
+# 测试与 Python 工具缓存
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage/
+htmlcov/
+.tox/
+.nox/
+
+# TypeScript 构建缓存
+*.tsbuildinfo
+
 data/*.json
 !data/.gitkeep
 
@@ -27,3 +40,6 @@ skills-lock.json
 # 外部规范与本地开发待办，不纳入版本库
 docs/交我办移动端设计规范.pdf
 docs/TODO.md
+
+# 本地 Docker 镜像包
+siyuan-compass-images-*.tar.gz
