@@ -19,7 +19,9 @@ backend/.venv/
 
 data/*.json
 !data/.gitkeep
+
 skills-lock.json
+.agents/
 
 
 # 外部规范与本地开发待办，不纳入版本库
