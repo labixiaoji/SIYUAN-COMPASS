@@ -1,4 +1,4 @@
-# 大学生生涯规划智能小助手
+# 交小航——你的AI生涯伙伴
 
 一个面向学生的生涯规划问卷与 AI 报告系统，采用 React、FastAPI、PostgreSQL 和 Docker Compose。
 

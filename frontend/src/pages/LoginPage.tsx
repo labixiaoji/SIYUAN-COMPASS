@@ -37,7 +37,7 @@ export function LoginPage() {
     <main className="shell auth-page">
       <form className="panel auth-card" onSubmit={submit}>
         <div className="auth-heading">
-          <span className="auth-product-name">大学生生涯规划智能小助手</span>
+          <span className="auth-product-name">交小航——你的AI生涯伙伴</span>
           <h1>欢迎回来</h1>
           <p className="hint">登录账号，继续填写问卷或查看你的生涯蓝图。</p>
         </div>
