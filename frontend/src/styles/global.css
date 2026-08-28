@@ -674,6 +674,23 @@ select {
   text-align: center;
 }
 
+.auth-divider {
+  align-items: center;
+  color: var(--muted);
+  display: flex;
+  font-size: 13px;
+  gap: 12px;
+  margin: 8px 0;
+}
+
+.auth-divider::before,
+.auth-divider::after {
+  background: var(--line);
+  content: "";
+  flex: 1;
+  height: 1px;
+}
+
 .success {
   background: var(--success-soft);
   border: 1px solid var(--success-line);

@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
+import { fetchCurrentUser, jAccountLogoutUrl } from "../api/auth";
 import type { AuthResult, AuthUser } from "../api/auth";
 import {
   clearAssessmentLocalData,
@@ -13,6 +14,7 @@ export const AUTH_UNAUTHORIZED_EVENT = "siyuan:auth-unauthorized";
 
 type AuthContextValue = {
   user: AuthUser | null;
+  loading: boolean;
   completeLogin: (result: AuthResult) => void;
   logout: () => void;
 };
@@ -22,7 +24,16 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 function readStoredUser(): AuthUser | null {
   try {
     const value = window.localStorage.getItem(USER_KEY);
-    return value ? JSON.parse(value) : null;
+    if (!value) return null;
+    const parsed = JSON.parse(value) as Partial<AuthUser>;
+    if (!parsed.id || !parsed.username || !parsed.displayName || !parsed.role) return null;
+    return {
+      id: parsed.id,
+      username: parsed.username,
+      displayName: parsed.displayName,
+      role: parsed.role,
+      authSource: parsed.authSource === "jaccount" ? "jaccount" : "local"
+    };
   } catch {
     return null;
   }
@@ -39,6 +50,33 @@ export function clearStoredAuth() {
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(readStoredUser);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let closed = false;
+    fetchCurrentUser()
+      .then((currentUser) => {
+        if (closed) return;
+        setUser(currentUser);
+        if (currentUser.authSource === "local") {
+          window.localStorage.setItem(USER_KEY, JSON.stringify(currentUser));
+        } else {
+          window.localStorage.removeItem(TOKEN_KEY);
+          window.localStorage.removeItem(USER_KEY);
+        }
+      })
+      .catch(() => {
+        if (closed) return;
+        clearStoredAuth();
+        setUser(null);
+      })
+      .finally(() => {
+        if (!closed) setLoading(false);
+      });
+    return () => {
+      closed = true;
+    };
+  }, []);
 
   useEffect(() => {
     clearExpiredAssessmentStorage();
@@ -53,6 +91,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<AuthContextValue>(() => ({
     user,
+    loading,
     completeLogin(result) {
       if (user && user.id !== result.user.id) {
         clearAssessmentLocalData(user.id);
@@ -65,8 +104,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (user) clearAssessmentLocalData(user.id);
       clearStoredAuth();
       setUser(null);
+      if (user?.authSource === "jaccount") {
+        window.location.assign(jAccountLogoutUrl());
+      }
     }
-  }), [user]);
+  }), [loading, user]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

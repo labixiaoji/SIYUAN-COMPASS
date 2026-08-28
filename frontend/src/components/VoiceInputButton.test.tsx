@@ -1,10 +1,15 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { transcribeAudio } from "../api/speech";
+import { isSpeechConfigured } from "../api/speechAvailability";
 import { VoiceInputButton } from "./VoiceInputButton";
 
 vi.mock("../api/speech", () => ({
   transcribeAudio: vi.fn()
+}));
+
+vi.mock("../api/speechAvailability", () => ({
+  isSpeechConfigured: vi.fn()
 }));
 
 class FakeMediaRecorder {
@@ -32,8 +37,21 @@ class FakeMediaRecorder {
 }
 
 describe("VoiceInputButton", () => {
+  beforeEach(() => {
+    vi.mocked(isSpeechConfigured).mockResolvedValue(true);
+  });
+
   afterEach(() => {
     vi.unstubAllGlobals();
+  });
+
+  it("语音未配置时不渲染任何控件", async () => {
+    vi.mocked(isSpeechConfigured).mockResolvedValue(false);
+
+    render(<VoiceInputButton onTranscript={vi.fn()} />);
+
+    await waitFor(() => expect(isSpeechConfigured).toHaveBeenCalled());
+    expect(screen.queryByRole("button", { name: /语音输入/ })).not.toBeInTheDocument();
   });
 
   it("录音结束后上传并回传转写文本", async () => {
@@ -48,7 +66,7 @@ describe("VoiceInputButton", () => {
     const onTranscript = vi.fn();
 
     render(<VoiceInputButton onTranscript={onTranscript} />);
-    fireEvent.click(screen.getByRole("button", { name: /语音输入/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /语音输入/ }));
     await waitFor(() => expect(screen.getByRole("button", { name: /停止录音/ })).toBeInTheDocument());
     fireEvent.click(screen.getByRole("button", { name: /停止录音/ }));
 
@@ -67,7 +85,7 @@ describe("VoiceInputButton", () => {
     const onTranscript = vi.fn();
 
     render(<VoiceInputButton onTranscript={onTranscript} />);
-    fireEvent.click(screen.getByRole("button", { name: /语音输入/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /语音输入/ }));
     await waitFor(() => expect(screen.getByRole("button", { name: /取消/ })).toBeInTheDocument());
     fireEvent.click(screen.getByRole("button", { name: /取消/ }));
 

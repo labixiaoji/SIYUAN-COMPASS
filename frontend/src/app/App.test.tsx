@@ -31,6 +31,7 @@ describe("App", () => {
   it("为退出按钮提供手机端隐藏标识", () => {
     window.localStorage.setItem("siyuan_auth_token", "token");
     window.localStorage.setItem("siyuan_auth_user", JSON.stringify({
+      authSource: "local",
       displayName: "测试学生",
       id: "user-a",
       role: "student",

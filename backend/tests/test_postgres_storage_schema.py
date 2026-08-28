@@ -48,6 +48,12 @@ class PostgresStorageSchemaTest(unittest.TestCase):
         self.assertIn("speech_quota_used", STORAGE_SOURCE)
         self.assertIn("UPDATE users", STORAGE_SOURCE)
 
+    def test_users_track_jaccount_auth_source(self):
+        self.assertIn("auth_source TEXT NOT NULL DEFAULT 'local'", STORAGE_SOURCE)
+        self.assertIn("ADD COLUMN IF NOT EXISTS auth_source", STORAGE_SOURCE)
+        self.assertIn("upsert_jaccount_user", STORAGE_SOURCE)
+        self.assertIn("set_jaccount_user_role", STORAGE_SOURCE)
+
     def test_admin_records_include_report_feedbacks(self):
         self.assertIn("feedbacks_by_report", STORAGE_SOURCE)
         self.assertIn('"feedbacks"', STORAGE_SOURCE)

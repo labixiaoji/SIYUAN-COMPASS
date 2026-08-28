@@ -30,6 +30,11 @@ htmlcov/
 # TypeScript 构建缓存
 *.tsbuildinfo
 
+# vite.config.ts 的编译产物。Vite 解析配置时 .js 优先于 .ts，
+# 提交它们会让构建忽略 vite.config.ts 的子路径配置。
+frontend/vite.config.js
+frontend/vite.config.d.ts
+
 data/*.json
 !data/.gitkeep
 

@@ -1,6 +1,10 @@
 import { AUTH_UNAUTHORIZED_EVENT, clearStoredAuth, getAuthToken } from "../auth/AuthContext";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000/api";
+export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000/api";
+
+export function apiUrl(path: string) {
+  return `${API_BASE_URL}${path}`;
+}
 
 export async function apiRequest<T>(path: string, options?: RequestInit): Promise<T> {
   const token = getAuthToken();
@@ -11,7 +15,9 @@ export async function apiRequest<T>(path: string, options?: RequestInit): Promis
   if (token) requestHeaders.set("Authorization", `Bearer ${token}`);
   let response: Response;
   try {
-    response = await fetch(`${API_BASE_URL}${path}`, {
+    // jAccount 认证依赖同域门户的签名 session cookie。
+    response = await fetch(apiUrl(path), {
+      credentials: "include",
       ...options,
       headers: requestHeaders
     });

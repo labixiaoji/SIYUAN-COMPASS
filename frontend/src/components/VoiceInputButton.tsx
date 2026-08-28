@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { transcribeAudio } from "../api/speech";
+import { isSpeechConfigured } from "../api/speechAvailability";
 
 type VoiceInputButtonProps = {
   disabled?: boolean;
@@ -111,6 +112,7 @@ export function VoiceInputButton({ disabled = false, onTranscript }: VoiceInputB
   const timerRef = useRef<number | null>(null);
   const cancelledRef = useRef(false);
   const mountedRef = useRef(true);
+  const [configured, setConfigured] = useState<boolean | null>(null);
 
   const stopTracks = () => {
     streamRef.current?.getTracks().forEach((track) => track.stop());
@@ -139,6 +141,16 @@ export function VoiceInputButton({ disabled = false, onTranscript }: VoiceInputB
       clearTimer();
       if (recorderRef.current && recorderRef.current.state !== "inactive") recorderRef.current.stop();
       stopTracks();
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    isSpeechConfigured().then((value) => {
+      if (active) setConfigured(value);
+    });
+    return () => {
+      active = false;
     };
   }, []);
 
@@ -217,6 +229,8 @@ export function VoiceInputButton({ disabled = false, onTranscript }: VoiceInputB
     if (recorderRef.current?.state === "recording") recorderRef.current.stop();
     else reset();
   }
+
+  if (!configured) return null;
 
   return (
     <div className="voice-input-control">

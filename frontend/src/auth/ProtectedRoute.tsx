@@ -9,14 +9,17 @@ export function ProtectedRoute({
   children: ReactNode;
   role?: "student" | "admin";
 }) {
-  const { user } = useAuth();
+  const { loading, user } = useAuth();
   const location = useLocation();
 
+  if (loading) {
+    return <main className="shell page"><div className="panel">正在确认登录状态...</div></main>;
+  }
   if (!user) {
     return <Navigate replace state={{ from: location.pathname }} to="/login" />;
   }
-  if (role && user.role !== role) {
-    return <Navigate replace to={user.role === "admin" ? "/admin" : "/assessment"} />;
+  if (role === "admin" && user.role !== "admin") {
+    return <Navigate replace to="/assessment" />;
   }
   return children;
 }
