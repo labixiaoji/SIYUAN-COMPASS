@@ -725,6 +725,260 @@ select {
   font-size: 14px;
 }
 
+.admin-layout-shell {
+  padding-top: 18px;
+}
+
+.admin-navigation {
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 0 2px;
+  scrollbar-width: thin;
+}
+
+.admin-navigation-link {
+  border-bottom: 3px solid transparent;
+  color: var(--muted);
+  flex: 0 0 auto;
+  font-size: 14px;
+  font-weight: 700;
+  padding: 11px 14px 10px;
+  white-space: nowrap;
+}
+
+.admin-navigation-link:hover,
+.admin-navigation-link:focus-visible {
+  background: var(--accent-weak);
+  color: var(--accent-dark);
+  outline: none;
+}
+
+.admin-navigation-link.active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.admin-metric-link {
+  color: var(--ink);
+  display: block;
+  min-height: 116px;
+  padding: 16px 18px 14px;
+  transition: border-color 120ms ease, box-shadow 120ms ease, transform 120ms ease;
+}
+
+.admin-metric-link:hover,
+.admin-metric-link:focus-visible {
+  border-color: var(--accent-line);
+  box-shadow: 0 6px 18px rgba(1, 106, 237, 0.1);
+  outline: none;
+  transform: translateY(-1px);
+}
+
+.admin-metric-link small {
+  color: var(--muted);
+  display: block;
+  font-size: 12px;
+  margin-top: 6px;
+}
+
+.admin-metric-failed {
+  border-left-color: var(--warn);
+}
+
+.admin-overview-failures,
+.admin-recent-reports {
+  margin-top: 24px;
+}
+
+.admin-failure-list,
+.admin-recent-report-list {
+  border-top: 1px solid var(--line);
+  margin-top: 16px;
+}
+
+.admin-failure-row,
+.admin-recent-report-row {
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  padding: 14px 0;
+}
+
+.admin-failure-row:hover,
+.admin-recent-report-row:hover {
+  background: var(--accent-weak);
+}
+
+.admin-failure-row > div:first-child,
+.admin-recent-report-row > div:first-child {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.admin-failure-row span,
+.admin-recent-report-row span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.admin-failure-row-detail {
+  align-items: flex-end;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  max-width: 58%;
+  min-width: 0;
+}
+
+.admin-failure-row-detail p {
+  color: var(--warn-ink);
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-list-page,
+.admin-detail-page {
+  padding-top: 28px;
+}
+
+.admin-list-panel {
+  padding: 20px;
+}
+
+.admin-list-panel .admin-record-filters {
+  grid-template-columns: minmax(260px, 1.5fr) minmax(180px, 0.75fr);
+  margin: -4px -4px 18px;
+}
+
+.admin-list-panel .admin-table {
+  min-width: 980px;
+}
+
+.admin-job-table {
+  min-width: 1120px !important;
+}
+
+.admin-id-text {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.02em;
+}
+
+.admin-draft-available {
+  color: var(--success) !important;
+  font-weight: 800;
+}
+
+.admin-error-cell {
+  max-width: 260px;
+}
+
+.admin-error-cell strong,
+.admin-error-cell span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-report-warning {
+  color: var(--warn-ink) !important;
+  display: block;
+  line-height: 1.5;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-detail-summary,
+.admin-failure-detail,
+.admin-detail-actions-panel {
+  margin-top: 20px;
+}
+
+.admin-detail-title-row {
+  align-items: flex-start;
+  display: flex;
+  gap: 18px;
+  justify-content: space-between;
+}
+
+.admin-detail-title-row h2 {
+  margin: 0 0 6px;
+}
+
+.admin-detail-grid {
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-top: 18px;
+  padding-top: 18px;
+}
+
+.admin-detail-grid div {
+  min-width: 0;
+}
+
+.admin-detail-grid span,
+.admin-error-message > span {
+  color: var(--muted);
+  display: block;
+  font-size: 13px;
+  margin-bottom: 5px;
+}
+
+.admin-detail-grid strong {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.admin-detail-message {
+  background: var(--accent-weak);
+  border-left: 3px solid var(--accent);
+  line-height: 1.7;
+  margin: 18px 0 0;
+  padding: 10px 12px;
+}
+
+.admin-failure-detail {
+  border-color: var(--warn-line);
+}
+
+.failure-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.admin-error-message {
+  border-top: 1px solid var(--warn-line);
+  margin-top: 18px;
+  padding-top: 16px;
+}
+
+.admin-error-message p {
+  background: var(--warn-soft);
+  color: var(--warn-ink);
+  line-height: 1.7;
+  margin: 0;
+  overflow-wrap: anywhere;
+  padding: 12px;
+}
+
+.admin-data-notice,
+.recovery-notice {
+  line-height: 1.7;
+  margin-bottom: 20px;
+  padding: 12px 14px;
+}
+
 .admin-records {
   margin-top: 24px;
 }
@@ -1784,6 +2038,53 @@ select {
   .admin-record-top {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .admin-layout-shell {
+    padding-top: 8px;
+  }
+
+  .admin-navigation {
+    margin: 0 -6px;
+  }
+
+  .admin-navigation-link {
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+
+  .admin-failure-row,
+  .admin-recent-report-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .admin-failure-row-detail {
+    align-items: flex-start;
+    max-width: 100%;
+  }
+
+  .admin-failure-row-detail p {
+    white-space: normal;
+  }
+
+  .admin-list-panel {
+    padding: 16px 12px;
+  }
+
+  .admin-list-panel .admin-record-filters {
+    grid-template-columns: 1fr;
+    margin-left: 0;
+    margin-right: 0;
+  }
+
+  .admin-detail-title-row {
+    flex-direction: column;
+  }
+
+  .admin-detail-grid,
+  .failure-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .admin-record-filters {

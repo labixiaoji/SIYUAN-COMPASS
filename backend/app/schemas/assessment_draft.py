@@ -20,6 +20,7 @@ class AssessmentDraft(BaseModel):
     createdAt: str
     updatedAt: str
     expiresAt: str
+    sourceJobId: str | None = None
 
 
 class AssessmentDraftEnvelope(BaseModel):

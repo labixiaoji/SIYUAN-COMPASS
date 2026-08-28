@@ -186,6 +186,39 @@ class DataMinimizationTest(TestCase):
 
         self.assertEqual(raised.exception.current["version"], 4)
 
+    def test_failed_job_recovery_prefers_latest_submitted_snapshot(self):
+        connection = Mock()
+        query = Mock()
+        query.fetchone.return_value = {
+            "job_id": "job-1",
+            "user_id": "user-1",
+            "status": "failed",
+            "input_data": {
+                "userId": "user-1",
+                "collegeMajor": "最新提交的专业",
+            },
+            "job_created_at": datetime.now(timezone.utc),
+            "job_updated_at": datetime.now(timezone.utc),
+            "source_job_id": "job-1",
+            "draft_answers": {"collegeMajor": "旧云端草稿"},
+            "draft_current_step": 6,
+            "draft_version": 4,
+            "draft_created_at": datetime.now(timezone.utc),
+            "draft_updated_at": datetime.now(timezone.utc),
+        }
+        connection.execute.return_value = query
+
+        with patch.object(json_db, "_connect", return_value=fake_connection(connection)):
+            recovery = json_db.load_generation_job_recovery_draft(
+                "job-1",
+                user_id="user-1",
+            )
+
+        self.assertIsNotNone(recovery)
+        self.assertEqual(recovery["answers"]["collegeMajor"], "最新提交的专业")
+        self.assertEqual(recovery["currentStep"], 6)
+        self.assertEqual(connection.execute.call_args.args[1], ["job-1", "user-1"])
+
 
 class PrivacyDeletionTest(TestCase):
     def test_single_report_delete_cascades_and_audits_admin_in_one_transaction(self):
@@ -267,7 +300,7 @@ class GenerationQuotaPersistenceTest(TestCase):
         }
         active_job = Mock()
         active_job.fetchone.return_value = None
-        connection.execute.side_effect = [Mock(), quota_user, active_job, Mock(), Mock()]
+        connection.execute.side_effect = [Mock(), quota_user, active_job, Mock(), Mock(), Mock()]
         job = GenerationJobStatus(
             jobId="job-1",
             userId="user-1",
@@ -288,11 +321,14 @@ class GenerationQuotaPersistenceTest(TestCase):
             )
 
         self.assertIsNone(result)
-        quota_update = connection.execute.call_args_list[-1]
+        quota_update = connection.execute.call_args_list[-2]
         self.assertIn("UPDATE users", quota_update.args[0])
         self.assertEqual(quota_update.args[1][0], date(2026, 7, 30))
         self.assertEqual(quota_update.args[1][1], 3)
         self.assertEqual(quota_update.args[1][3], "user-1")
+        draft_update = connection.execute.call_args_list[-1]
+        self.assertIn("UPDATE assessment_drafts", draft_update.args[0])
+        self.assertEqual(draft_update.args[1][0], "job-1")
 
     def test_expired_account_quota_counter_is_cleared(self):
         connection = Mock()
@@ -388,6 +424,93 @@ class AdminAuditTest(TestCase):
             "admin.metrics.read",
             "report_collection",
             "metrics",
+        )
+
+    @patch.object(admin, "get_admin_generation_jobs", return_value={"total": 1, "items": []})
+    @patch.object(admin, "record_admin_audit")
+    def test_admin_failure_job_list_is_audited_and_filtered(self, record_audit, get_jobs):
+        result = admin.admin_generation_jobs(
+            status="failed",
+            keyword=None,
+            limit=20,
+            offset=0,
+            admin={"id": "admin-1", "role": "admin"},
+        )
+
+        self.assertEqual(result["total"], 1)
+        get_jobs.assert_called_once_with(status="failed", keyword=None, limit=20, offset=0)
+        record_audit.assert_called_once_with(
+            "admin-1",
+            "admin.generation_jobs.read",
+            "generation_job_collection",
+            "failed",
+        )
+
+    @patch.object(admin, "get_admin_generation_jobs", return_value={"total": 0, "items": []})
+    def test_admin_generation_jobs_rejects_unknown_status(self, _get_jobs):
+        with self.assertRaises(HTTPException) as raised:
+            admin.admin_generation_jobs(
+                status="broken",
+                keyword=None,
+                limit=20,
+                offset=0,
+                admin={"id": "admin-1", "role": "admin"},
+            )
+
+        self.assertEqual(raised.exception.status_code, 400)
+
+    @patch.object(admin, "get_admin_assessments", return_value={"total": 2, "items": []})
+    @patch.object(admin, "record_admin_audit")
+    def test_admin_assessment_list_is_audited(self, record_audit, get_assessments):
+        result = admin.admin_assessments(
+            status="all",
+            keyword="计算机",
+            limit=20,
+            offset=0,
+            admin={"id": "admin-1", "role": "admin"},
+        )
+
+        self.assertEqual(result["total"], 2)
+        get_assessments.assert_called_once_with(
+            status="all",
+            keyword="计算机",
+            limit=20,
+            offset=0,
+        )
+        record_audit.assert_called_once_with(
+            "admin-1",
+            "admin.assessments.read",
+            "assessment_collection",
+            "all",
+        )
+
+    @patch.object(admin, "load_generation_job_recovery_draft", return_value={
+        "jobId": "job-1",
+        "answers": {"collegeMajor": "计算机"},
+        "currentStep": 3,
+        "version": 2,
+        "source": "job_input",
+    })
+    @patch.object(admin, "get_admin_generation_job", return_value={"userId": "student-1"})
+    @patch.object(admin, "record_admin_audit")
+    def test_admin_can_read_failed_job_draft_with_audit(
+        self,
+        record_audit,
+        _get_job,
+        load_draft,
+    ):
+        result = admin.admin_generation_job_draft(
+            "job-1",
+            {"id": "admin-1", "role": "admin"},
+        )
+
+        self.assertEqual(result["jobId"], "job-1")
+        load_draft.assert_called_once_with("job-1", user_id="student-1")
+        record_audit.assert_called_once_with(
+            "admin-1",
+            "generation_job.draft.read",
+            "generation_job",
+            "job-1",
         )
 
     @patch.object(admin, "find_report", return_value=SimpleNamespace())

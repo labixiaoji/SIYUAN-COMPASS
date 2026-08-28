@@ -1,6 +1,17 @@
 import { apiRequest } from "./client";
 import type { AssessmentResponseInput } from "../types/assessment";
 
+export type GenerationFailure = {
+  code: string;
+  stage: string;
+  message: string;
+  retryable: boolean;
+  provider?: string;
+  providerStatus?: number;
+  traceId?: string;
+  occurredAt?: string;
+};
+
 export type AssessmentSubmitResult = {
   userId: string;
   responseId: string;
@@ -21,6 +32,19 @@ export type GenerationJobStatus = {
   reportId?: string;
   generationStatus?: string;
   error?: string;
+  attempts?: number;
+  failure?: GenerationFailure;
+  draftAvailable?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type GenerationJobDraft = {
+  jobId: string;
+  answers: Partial<AssessmentResponseInput> & Record<string, unknown>;
+  currentStep: number;
+  version: number;
+  source: "cloud_draft" | "job_input";
   createdAt?: string;
   updatedAt?: string;
 };
@@ -34,6 +58,7 @@ export type AssessmentDraft = {
   createdAt: string;
   updatedAt: string;
   expiresAt: string;
+  sourceJobId?: string;
 };
 
 export function submitAssessment(input: AssessmentResponseInput & { userId?: string }) {
@@ -53,6 +78,10 @@ export function createAssessmentJob(input: AssessmentResponseInput & { userId?: 
 
 export function fetchAssessmentJob(jobId: string, signal?: AbortSignal) {
   return apiRequest<GenerationJobStatus>(`/assessment-jobs/${jobId}`, { signal });
+}
+
+export function fetchAssessmentJobDraft(jobId: string, signal?: AbortSignal) {
+  return apiRequest<GenerationJobDraft>(`/assessment-jobs/${jobId}/draft`, { signal });
 }
 
 export function cancelAssessmentJob(jobId: string) {

@@ -197,6 +197,39 @@ class GenerationJobCancellationTest(TestCase):
         self.assertEqual(update.call_args.kwargs["expected_statuses"], ("running",))
         self.assertEqual(update.call_args.kwargs["claim_token"], "worker-token")
         self.assertTrue(update.call_args.kwargs["clear_private_state"])
+        self.assertTrue(update.call_args.kwargs["clear_input_data"])
+        self.assertTrue(update.call_args.kwargs["release_claim"])
+
+    @patch.object(generation_jobs, "update_generation_job_conditionally")
+    def test_failed_update_releases_claim_but_keeps_private_input(self, update):
+        update.return_value = None
+
+        generation_jobs._update_running_job(
+            "job-1",
+            "worker-token",
+            terminal=True,
+            status="failed",
+            stage="report_failed",
+        )
+
+        self.assertFalse(update.call_args.kwargs["clear_private_state"])
+        self.assertFalse(update.call_args.kwargs["clear_input_data"])
+        self.assertTrue(update.call_args.kwargs["release_claim"])
+
+
+class GenerationFailureTest(TestCase):
+    def test_failure_is_structured_and_redacted(self):
+        failure = generation_jobs.build_generation_failure(
+            "job-1",
+            "report",
+            RuntimeError('模型请求超时，请使用 {"api_key":"secret-value"} 联系 13900138000'),
+        )
+
+        self.assertEqual(failure.code, "REPORT_MODEL_TIMEOUT")
+        self.assertEqual(failure.stage, "report")
+        self.assertNotIn("secret-value", failure.message)
+        self.assertNotIn("13900138000", failure.message)
+        self.assertEqual(failure.traceId, "job-1")
 
 
 if __name__ == "__main__":

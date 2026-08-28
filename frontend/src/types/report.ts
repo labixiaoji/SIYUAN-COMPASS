@@ -1,4 +1,5 @@
 import type { AssessmentResponseInput } from "./assessment";
+import type { GenerationFailure, GenerationJobStatus } from "../api/assessments";
 
 export type CareerBlueprintReport = {
   id: string;
@@ -35,6 +36,9 @@ export type AdminMetrics = {
   averageRecommendScore: number;
   lowScoreReports: string[];
   recentReports: CareerBlueprintReport[];
+  generationFailedCount?: number;
+  generationRunningCount?: number;
+  generationQueuedCount?: number;
 };
 
 export type ReportFeedbackRecord = {
@@ -67,4 +71,34 @@ export type AdminRecord = {
     submittedAt: string;
   };
   feedbacks: ReportFeedbackRecord[];
+};
+
+export type AdminGenerationJob = GenerationJobStatus & {
+  draftAvailable: boolean;
+  student: {
+    id: string;
+    username: string;
+    displayName: string;
+  };
+};
+
+export type AdminAssessmentRecord = {
+  recordId: string;
+  jobId?: string | null;
+  responseId?: string | null;
+  student: {
+    id: string;
+    username: string;
+    displayName: string;
+  };
+  submittedAt?: string | null;
+  educationStage?: string;
+  grade?: string;
+  collegeMajor?: string;
+  taskStatus: string;
+  reportStatus?: string | null;
+  reportId?: string | null;
+  draftAvailable: boolean;
+  failure?: GenerationFailure | null;
+  error?: string | null;
 };

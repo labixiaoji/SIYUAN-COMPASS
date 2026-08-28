@@ -1,11 +1,18 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { fetchAdminAssessment } from "../api/admin";
-import type { AssessmentResponse } from "../types/assessment";
+import type { AssessmentResponseInput } from "../types/assessment";
+
+export type AssessmentDisplay = Partial<AssessmentResponseInput> & {
+  id?: string;
+  userId?: string;
+  submittedAt?: string;
+  createdAt?: string;
+};
 
 type FieldSpec = {
   label: string;
-  value: (assessment: AssessmentResponse) => unknown;
+  value: (assessment: AssessmentDisplay) => unknown;
 };
 
 type SectionSpec = {
@@ -26,13 +33,15 @@ function formatValue(value: unknown) {
   return "未填写";
 }
 
-function abilityText(assessment: AssessmentResponse) {
+function abilityText(assessment: AssessmentDisplay) {
   const scores = assessment.abilityScores;
+  if (!scores) return "未填写";
   return `逻辑 ${scores.logic} / 表达 ${scores.expression} / 空间设计 ${scores.spatialDesign} / 人际协作 ${scores.interpersonal}`;
 }
 
-function interestText(assessment: AssessmentResponse) {
+function interestText(assessment: AssessmentDisplay) {
   const scores = assessment.interestScores;
+  if (!scores) return "未填写";
   return `动手 ${scores.handsOn} / 研究 ${scores.research} / 创造 ${scores.creation} / 助人 ${scores.helping} / 领导 ${scores.leadership} / 细节 ${scores.detail}`;
 }
 
@@ -48,7 +57,7 @@ const sections: SectionSpec[] = [
       { label: "性别", value: (item) => item.gender },
       { label: "学院 / 专业", value: (item) => item.collegeMajor },
       { label: "家乡", value: (item) => item.hometown },
-      { label: "提交时间", value: (item) => new Date(item.submittedAt).toLocaleString("zh-CN") }
+      { label: "提交时间", value: (item) => item.submittedAt ? new Date(item.submittedAt).toLocaleString("zh-CN") : "未记录" }
     ]
   },
   {
@@ -152,9 +161,29 @@ const sections: SectionSpec[] = [
   }
 ];
 
+export function AdminAssessmentReader({ assessment }: { assessment: AssessmentDisplay }) {
+  return (
+    <section className="assessment-reader">
+      {sections.map((section) => (
+        <article className="panel assessment-section" key={section.title}>
+          <h2>{section.title}</h2>
+          <div className="assessment-field-grid">
+            {section.fields.map((field) => (
+              <div className="assessment-field" key={field.label}>
+                <span>{field.label}</span>
+                <p>{formatValue(field.value(assessment))}</p>
+              </div>
+            ))}
+          </div>
+        </article>
+      ))}
+    </section>
+  );
+}
+
 export function AdminAssessmentPage() {
   const { responseId } = useParams();
-  const [assessment, setAssessment] = useState<AssessmentResponse | null>(null);
+  const [assessment, setAssessment] = useState<AssessmentDisplay | null>(null);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -179,21 +208,7 @@ export function AdminAssessmentPage() {
         <p>问卷记录 · {assessment.educationStage || "-"} {assessment.grade || "-"}</p>
       </div>
 
-      <section className="assessment-reader">
-        {sections.map((section) => (
-          <article className="panel assessment-section" key={section.title}>
-            <h2>{section.title}</h2>
-            <div className="assessment-field-grid">
-              {section.fields.map((field) => (
-                <div className="assessment-field" key={field.label}>
-                  <span>{field.label}</span>
-                  <p>{formatValue(field.value(assessment))}</p>
-                </div>
-              ))}
-            </div>
-          </article>
-        ))}
-      </section>
+      <AdminAssessmentReader assessment={assessment} />
 
       <div className="actions">
         <Link className="button secondary" to="/admin">返回后台</Link>

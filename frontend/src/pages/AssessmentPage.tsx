@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   deleteAssessmentDraft as deleteCloudAssessmentDraft,
   fetchAssessmentDraft,
   createAssessmentJob,
   fetchAssessmentJob,
+  fetchAssessmentJobDraft,
   saveAssessmentDraft as saveCloudAssessmentDraft
 } from "../api/assessments";
 import type { AssessmentDraft, GenerationJobStatus } from "../api/assessments";
@@ -408,6 +409,8 @@ function waitForNextPoll(signal: AbortSignal) {
 
 export function AssessmentPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const recoverJobId = searchParams.get("recoverJobId");
   const { user } = useAuth();
   const showDevTools = import.meta.env.DEV;
   const [step, setStep] = useState(0);
@@ -421,6 +424,7 @@ export function AssessmentPage() {
   const [cloudDraftPrompt, setCloudDraftPrompt] = useState<AssessmentDraft | null>(null);
   const [draftSync, setDraftSync] = useState<DraftSyncState>("idle");
   const [draftSavedAt, setDraftSavedAt] = useState<string | null>(null);
+  const [recoveryNotice, setRecoveryNotice] = useState("");
   const draftVersionRef = useRef(0);
   const draftRequestRef = useRef<AbortController | null>(null);
   const draftSaveTimerRef = useRef<number | null>(null);
@@ -456,6 +460,7 @@ export function AssessmentPage() {
     setCloudDraftPrompt(null);
     setDraftSync("idle");
     setDraftSavedAt(null);
+    setRecoveryNotice("");
     draftVersionRef.current = 0;
     setStep(0);
     setForm(initialForm);
@@ -463,6 +468,32 @@ export function AssessmentPage() {
     setFieldErrors({});
     setGenerationJob(null);
     if (!user) return;
+
+    if (recoverJobId) {
+      const controller = new AbortController();
+      draftRequestRef.current = controller;
+      setDraftSync("loading");
+      fetchAssessmentJobDraft(recoverJobId, controller.signal).then((recovery) => {
+        if (!mountedRef.current || controller.signal.aborted) return;
+        setForm(formFromPartial(recovery.answers));
+        setStep(recovery.currentStep);
+        draftVersionRef.current = recovery.version;
+        setDraftDirty(true);
+        setCloudDraftPrompt(null);
+        setDraftSavedAt(recovery.updatedAt || null);
+        setDraftSync("saved");
+        setRecoveryNotice("已恢复上次失败任务的问卷，请检查内容后重新提交。");
+        setDraftOwnerId(user.id);
+        setDraftReady(true);
+      }).catch((caught) => {
+        if (!mountedRef.current || controller.signal.aborted || isAbortError(caught)) return;
+        setError(caught instanceof Error ? caught.message : "失败任务问卷恢复失败，请重新填写。");
+        setDraftOwnerId(user.id);
+        setDraftReady(true);
+        setDraftSync("idle");
+      });
+      return () => controller.abort();
+    }
 
     const prefill = takeAssessmentPrefill<AssessmentPrefill>(user.id);
     if (prefill) {
@@ -513,7 +544,7 @@ export function AssessmentPage() {
       setDraftReady(true);
     });
     return () => controller.abort();
-  }, [user?.id]);
+  }, [recoverJobId, user?.id]);
 
   useEffect(() => {
     if (!user || draftOwnerId !== user.id || !draftReady || !draftDirty || submitting || cloudDraftPrompt) return;
@@ -855,6 +886,8 @@ export function AssessmentPage() {
         <h1>生涯规划问卷</h1>
         <p>请尽量填写具体。你的回答仅用于生成个人生涯规划报告和产品优化分析。</p>
       </div>
+
+      {recoveryNotice && <div className="success recovery-notice" role="status">{recoveryNotice}</div>}
 
       {draftReady && (
         <div className={`draft-status draft-status-${draftSync}`} role="status">

@@ -1,88 +1,57 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { fetchAdminAuditLogs, fetchAdminMetrics, fetchAdminRecords } from "../api/admin";
-import type { AdminAuditLog } from "../api/admin";
-import type { AdminMetrics, AdminRecord, ReportFeedbackRecord } from "../types/report";
+import { fetchAdminGenerationJobs, fetchAdminMetrics } from "../api/admin";
+import type { AdminGenerationJob, AdminMetrics } from "../types/report";
 
-const recordsPerPage = 8;
-
-function reportStatusText(record: AdminRecord) {
-  if (record.report.qualityStatus === "failed") return "需检查";
-  if (record.report.qualityStatus === "warning") return "有提醒";
-  if (record.report.qualityStatus === "passed") return "已通过";
-  return "未检查";
+function statusText(status: string) {
+  const labels: Record<string, string> = {
+    queued: "等待生成",
+    running: "生成中",
+    success: "已成功",
+    failed: "生成失败",
+    cancelled: "已取消",
+    unknown: "未记录"
+  };
+  return labels[status] || status;
 }
 
-function reportStatusClass(record: AdminRecord) {
-  if (record.report.qualityStatus === "failed") return "failed";
-  if (record.report.qualityStatus === "warning") return "warning";
-  if (record.report.qualityStatus === "passed") return "success";
+function statusClass(status: string) {
+  if (status === "success") return "success";
+  if (status === "failed") return "failed";
+  if (status === "cancelled") return "warning";
   return "queued";
 }
 
-function averageFeedbackScore(feedback: ReportFeedbackRecord) {
-  const total = feedback.understandingScore + feedback.insightScore + feedback.actionScore + feedback.recommendScore;
-  return (total / 4).toFixed(1);
+function formatTime(value?: string | null) {
+  if (!value) return "时间未知";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "时间未知" : date.toLocaleString("zh-CN");
 }
 
-function compactWarningText(warning: string) {
-  const moduleMatch = warning.match(/^模块超过建议上限：(.+?)\s+(\d+)\/(\d+)\s*字符$/);
-  if (moduleMatch) {
-    return `${moduleMatch[1]}：字数超出（${moduleMatch[2]}/${moduleMatch[3]}）`;
-  }
-
-  const reportTooLongMatch = warning.match(/^报告长度超过\s*\d+\s*字符建议范围：(\d+)$/);
-  if (reportTooLongMatch) {
-    return `报告总长度：字数超出（${reportTooLongMatch[1]}）`;
-  }
-
-  const reportTooShortMatch = warning.match(/^报告长度不足\s*\d+\s*字符建议范围：(\d+)$/);
-  if (reportTooShortMatch) {
-    return `报告总长度：字数不足（${reportTooShortMatch[1]}）`;
-  }
-
-  return warning;
+function failureText(job: AdminGenerationJob) {
+  return job.failure?.message || job.error || "未记录具体错误信息";
 }
-
-function reportWarnings(record: AdminRecord) {
-  return (record.report.errorMessage || "")
-    .split(/[；;]/)
-    .map((item) => item.trim())
-    .filter(Boolean)
-    .map(compactWarningText);
-}
-
-const auditActionLabels: Record<string, string> = {
-  "admin.metrics.read": "查看统计指标",
-  "admin.records.read": "查看学生记录",
-  "admin.audit.read": "查看审计日志",
-  "assessment.read": "查看完整问卷",
-  "report.read": "查看报告",
-  "report.update": "修改报告",
-  "report.delete": "删除报告"
-};
 
 export function AdminPage() {
   const [metrics, setMetrics] = useState<AdminMetrics | null>(null);
-  const [records, setRecords] = useState<AdminRecord[]>([]);
-  const [auditLogs, setAuditLogs] = useState<AdminAuditLog[]>([]);
-  const [auditTotal, setAuditTotal] = useState(0);
+  const [recentFailures, setRecentFailures] = useState<AdminGenerationJob[]>([]);
   const [error, setError] = useState("");
-  const [keyword, setKeyword] = useState("");
-  const [qualityStatus, setQualityStatus] = useState("all");
-  const [educationStage, setEducationStage] = useState("all");
-  const [collegeMajor, setCollegeMajor] = useState("all");
-  const [page, setPage] = useState(1);
 
   useEffect(() => {
-    Promise.all([fetchAdminMetrics(), fetchAdminRecords(), fetchAdminAuditLogs()])
-      .then(([nextMetrics, nextRecords, nextAuditLogs]) => {
-        setMetrics(nextMetrics);
-        setRecords(nextRecords.records);
-        setAuditLogs(nextAuditLogs.items);
-        setAuditTotal(nextAuditLogs.total);
-      })
-      .catch((caught) => setError(caught instanceof Error ? caught.message : "后台数据加载失败。"));
+    let closed = false;
+    Promise.all([
+      fetchAdminMetrics(),
+      fetchAdminGenerationJobs({ status: "failed", limit: 5, offset: 0 })
+    ]).then(([nextMetrics, nextFailures]) => {
+      if (closed) return;
+      setMetrics(nextMetrics);
+      setRecentFailures(nextFailures.items);
+    }).catch((caught) => {
+      if (!closed) setError(caught instanceof Error ? caught.message : "后台数据加载失败。");
+    });
+    return () => {
+      closed = true;
+    };
   }, []);
 
   if (error) {
@@ -93,53 +62,37 @@ export function AdminPage() {
     return <main className="shell page"><div className="panel">后台数据加载中...</div></main>;
   }
 
-  const educationStages = Array.from(new Set(records.map((record) => record.assessment.educationStage).filter(Boolean))).sort();
-  const collegeMajors = Array.from(new Set(records.map((record) => record.assessment.collegeMajor).filter(Boolean))).sort();
-  const normalizedKeyword = keyword.trim().toLowerCase();
-  const filteredRecords = records.filter((record) => {
-    const searchableText = [
-      record.student.displayName,
-      record.student.username,
-      record.assessment.collegeMajor,
-    ].filter(Boolean).join(" ").toLowerCase();
-    return (
-      (!normalizedKeyword || searchableText.includes(normalizedKeyword))
-      && (qualityStatus === "all" || record.report.qualityStatus === qualityStatus)
-      && (educationStage === "all" || record.assessment.educationStage === educationStage)
-      && (collegeMajor === "all" || record.assessment.collegeMajor === collegeMajor)
-    );
-  });
-  const totalPages = Math.max(1, Math.ceil(filteredRecords.length / recordsPerPage));
-  const currentPage = Math.min(page, totalPages);
-  const displayedRecords = filteredRecords.slice((currentPage - 1) * recordsPerPage, currentPage * recordsPerPage);
-
-  function resetPage(setter: (value: string) => void, value: string) {
-    setter(value);
-    setPage(1);
-  }
-
-  function jumpToReport(reportId: string) {
-    const recordIndex = records.findIndex((record) => record.report.id === reportId);
-    if (recordIndex < 0) return;
-    setKeyword("");
-    setQualityStatus("all");
-    setEducationStage("all");
-    setCollegeMajor("all");
-    setPage(Math.floor(recordIndex / recordsPerPage) + 1);
-    window.setTimeout(() => document.getElementById(`report-${reportId}`)?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
-  }
+  const failedCount = metrics.generationFailedCount ?? metrics.reportFailedCount;
+  const runningCount = metrics.generationRunningCount ?? 0;
 
   return (
-    <main className="shell page">
+    <main className="shell page admin-overview-page">
       <div className="page-title">
         <h1>管理员后台</h1>
-        <p>查看学生生成记录，并对报告内容进行人工修订。</p>
+        <p>从总览进入填写记录、生成任务、成功报告和审计日志，分别处理不同类型的管理工作。</p>
       </div>
-      <section className="metrics">
-        <div className="panel stat"><strong>{metrics.assessmentCount}</strong><span>填写记录</span></div>
-        <div className="panel stat"><strong>{metrics.reportSuccessCount}</strong><span>成功报告</span></div>
-        <div className="panel stat"><strong>{metrics.feedbackCount}</strong><span>反馈数量</span></div>
-        <div className="panel stat"><strong>{metrics.reportFailedCount}</strong><span>失败报告</span></div>
+
+      <section className="metrics admin-metrics" aria-label="后台统计">
+        <Link className="panel stat admin-metric-link" to="/admin/assessments">
+          <strong>{metrics.assessmentCount}</strong>
+          <span>填写记录</span>
+          <small>查看所有问卷提交</small>
+        </Link>
+        <Link className="panel stat admin-metric-link" to="/admin/reports?status=success">
+          <strong>{metrics.reportSuccessCount}</strong>
+          <span>成功报告</span>
+          <small>查看已生成报告</small>
+        </Link>
+        <Link className="panel stat admin-metric-link admin-metric-failed" to="/admin/generation-jobs?status=failed">
+          <strong>{failedCount}</strong>
+          <span>失败任务</span>
+          <small>查看阶段和报错信息</small>
+        </Link>
+        <Link className="panel stat admin-metric-link" to="/admin/generation-jobs?status=running">
+          <strong>{runningCount}</strong>
+          <span>生成中任务</span>
+          <small>查看当前处理进度</small>
+        </Link>
       </section>
 
       <section className="panel admin-score-panel">
@@ -148,7 +101,7 @@ export function AdminPage() {
             <h2>报告评分</h2>
             <p className="hint">四项平均分来自学生提交的报告反馈。</p>
           </div>
-          <span>{metrics.feedbackCount} 份反馈</span>
+          <Link className="button secondary" to="/admin/reports">查看报告</Link>
         </div>
         <div className="score-metrics">
           <div><strong>{metrics.averageUnderstandingScore}</strong><span>平均理解度</span></div>
@@ -163,183 +116,65 @@ export function AdminPage() {
           ) : (
             <div className="low-score-list">
               {metrics.lowScoreReports.map((reportId) => (
-                <button className="low-score-link" key={reportId} onClick={() => jumpToReport(reportId)}>报告 {reportId.slice(0, 8)}</button>
+                <Link className="low-score-link" key={reportId} to={`/reports/${reportId}`}>
+                  报告 {reportId.slice(0, 8)}
+                </Link>
               ))}
             </div>
           )}
         </div>
       </section>
 
-      <section className="admin-records">
+      <section className="panel admin-overview-failures">
         <div className="admin-section-head">
           <div>
-            <h2>学生生成记录</h2>
-            <p className="hint">每条记录包含问卷入口、报告状态和学生反馈。可按学生、状态和问卷信息检索。</p>
+            <h2>最近失败任务</h2>
+            <p className="hint">失败任务会保留脱敏问卷快照，点击详情可查看失败阶段和定位信息。</p>
           </div>
-          <span>{filteredRecords.length} / {records.length} 条</span>
+          <Link className="button secondary" to="/admin/generation-jobs?status=failed">查看全部</Link>
         </div>
-        <div className="admin-record-filters" aria-label="生成记录筛选">
-          <label className="admin-filter-keyword">
-            <span>搜索学生</span>
-            <input
-              value={keyword}
-              onChange={(event) => resetPage(setKeyword, event.target.value)}
-              placeholder="姓名、用户名、专业"
-            />
-          </label>
-          <label>
-            <span>报告状态</span>
-            <select value={qualityStatus} onChange={(event) => resetPage(setQualityStatus, event.target.value)}>
-              <option value="all">全部</option>
-              <option value="passed">已通过</option>
-              <option value="warning">有提醒</option>
-              <option value="failed">需检查</option>
-              <option value="unchecked">未检查</option>
-            </select>
-          </label>
-          <label>
-            <span>教育阶段</span>
-            <select value={educationStage} onChange={(event) => resetPage(setEducationStage, event.target.value)}>
-              <option value="all">全部</option>
-              {educationStages.map((item) => <option key={item} value={item}>{item}</option>)}
-            </select>
-          </label>
-          <label>
-            <span>专业</span>
-            <select value={collegeMajor} onChange={(event) => resetPage(setCollegeMajor, event.target.value)}>
-              <option value="all">全部</option>
-              {collegeMajors.map((item) => <option key={item} value={item}>{item}</option>)}
-            </select>
-          </label>
-        </div>
-        {records.length === 0 ? (
-          <div className="panel empty-state">
-            <p>暂无报告记录。</p>
-          </div>
-        ) : filteredRecords.length === 0 ? (
-          <div className="panel empty-state">
-            <p>没有符合当前筛选条件的生成记录。</p>
-          </div>
+        {recentFailures.length === 0 ? (
+          <p className="hint">暂无失败任务。</p>
         ) : (
-          <>
-            <div className="admin-record-list">
-            {displayedRecords.map((record) => {
-              const feedbacks = record.feedbacks ?? [];
-              const warnings = reportWarnings(record);
-              return (
-                <article className="panel admin-record-card" id={`report-${record.report.id}`} key={record.report.id}>
-                  <div className="admin-record-top">
-                    <div>
-                      <div className="admin-record-title">
-                        <h3>{record.report.title}</h3>
-                        <span className={`job-status-pill ${reportStatusClass(record)}`}>{reportStatusText(record)}</span>
-                        {record.report.editedAt && <span className="admin-edit-pill">已人工修改</span>}
-                      </div>
-                      <p className="hint">{new Date(record.assessment.submittedAt).toLocaleString("zh-CN")} · {record.report.wordCount} 字</p>
-                    </div>
-                    <div className="admin-record-actions">
-                      <Link className="button secondary" to={`/reports/${record.report.id}`}>查看</Link>
-                      <Link className="button" to={`/admin/reports/${record.report.id}/edit`}>编辑</Link>
-                    </div>
-                  </div>
-
-                  <div className="admin-record-grid">
-                    <div className="admin-record-block">
-                      <span className="admin-block-label">学生</span>
-                      <strong>{record.student.displayName}</strong>
-                      <p>{record.student.username}</p>
-                    </div>
-                    <div className="admin-record-block">
-                      <span className="admin-block-label">问卷内容</span>
-                      <strong>{record.assessment.educationStage || "-"} · {record.assessment.grade || "-"}</strong>
-                      <p>专业：{record.assessment.collegeMajor || "-"}</p>
-                      <Link className="button secondary admin-block-button" to={`/admin/assessments/${record.report.responseId}`}>
-                        查看完整问卷
-                      </Link>
-                    </div>
-                    <div className="admin-record-block">
-                      <span className="admin-block-label">报告状态</span>
-                      <strong>{reportStatusText(record)}</strong>
-                      <p>模型：{record.report.modelName || "-"}</p>
-                      <p>版本：{record.report.promptVersion || "-"}</p>
-                      {warnings.length > 0 && (
-                        <details className="admin-warning-details">
-                          <summary>查看提醒内容</summary>
-                          <ul>
-                            {warnings.map((warning) => (
-                              <li key={warning}>{warning}</li>
-                            ))}
-                          </ul>
-                        </details>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="admin-feedback-section">
-                    <div className="admin-feedback-head">
-                      <strong>反馈记录</strong>
-                      <span>{feedbacks.length} 条</span>
-                    </div>
-                    {feedbacks.length === 0 ? (
-                      <p className="hint">这个报告还没有学生反馈。</p>
-                    ) : (
-                      <div className="admin-feedback-list">
-                        {feedbacks.map((feedback) => (
-                          <div className="admin-feedback-item" key={feedback.id}>
-                            <div className="admin-feedback-item-head">
-                              <strong>{averageFeedbackScore(feedback)} 分</strong>
-                              <span>{new Date(feedback.createdAt).toLocaleString("zh-CN")}</span>
-                            </div>
-                            <div className="admin-feedback-scores">
-                              <span>理解 {feedback.understandingScore}</span>
-                              <span>启发 {feedback.insightScore}</span>
-                              <span>行动 {feedback.actionScore}</span>
-                              <span>推荐 {feedback.recommendScore}</span>
-                            </div>
-                            <p>{feedback.comment?.trim() || "未填写文字反馈。"}</p>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </article>
-              );
-            })}
-            </div>
-            {totalPages > 1 && (
-              <nav className="admin-pagination" aria-label="生成记录分页">
-                <button className="button secondary" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>上一页</button>
-                <span>第 {currentPage} / {totalPages} 页</span>
-                <button className="button secondary" disabled={currentPage === totalPages} onClick={() => setPage(currentPage + 1)}>下一页</button>
-              </nav>
-            )}
-          </>
+          <div className="admin-failure-list">
+            {recentFailures.map((job) => (
+              <Link className="admin-failure-row" key={job.jobId} to={`/admin/generation-jobs/${job.jobId}`}>
+                <div>
+                  <strong>{job.student.displayName}</strong>
+                  <span>{formatTime(job.updatedAt)} · {job.failure?.code || "UNKNOWN_ERROR"}</span>
+                </div>
+                <div className="admin-failure-row-detail">
+                  <span className={`job-status-pill ${statusClass(job.status)}`}>{statusText(job.status)}</span>
+                  <p>{failureText(job)}</p>
+                </div>
+              </Link>
+            ))}
+          </div>
         )}
       </section>
 
-      <section className="panel admin-audit-panel">
+      <section className="panel admin-recent-reports">
         <div className="admin-section-head">
           <div>
-            <h2>管理员审计</h2>
-            <p className="hint">记录敏感信息查看、报告修改和删除操作，日志默认保留 180 天。</p>
+            <h2>最近成功报告</h2>
+            <p className="hint">质量状态只表示报告校验结果，不等同于生成任务是否失败。</p>
           </div>
-          <span>共 {auditTotal} 条</span>
+          <Link className="button secondary" to="/admin/reports?status=success">查看全部</Link>
         </div>
-        {auditLogs.length === 0 ? (
-          <p className="hint">暂无管理员操作记录。</p>
+        {metrics.recentReports.length === 0 ? (
+          <p className="hint">暂无成功报告。</p>
         ) : (
-          <div className="admin-audit-list">
-            {auditLogs.map((item) => (
-              <div className="admin-audit-item" key={item.id}>
+          <div className="admin-recent-report-list">
+            {metrics.recentReports.map((report) => (
+              <Link className="admin-recent-report-row" key={report.id} to={`/reports/${report.id}`}>
                 <div>
-                  <strong>{auditActionLabels[item.action] || item.action}</strong>
-                  <span>{item.adminDisplayName}</span>
+                  <strong>{report.title}</strong>
+                  <span>{formatTime(report.createdAt)} · {report.wordCount} 字</span>
                 </div>
-                <div>
-                  <span>{item.targetType} · {item.targetId === "all" ? "全部记录" : item.targetId.slice(0, 12)}</span>
-                  <time dateTime={item.createdAt}>{new Date(item.createdAt).toLocaleString("zh-CN")}</time>
-                </div>
-              </div>
+                <span className={`job-status-pill ${report.qualityStatus === "failed" ? "failed" : report.qualityStatus === "warning" ? "warning" : "success"}`}>
+                  {report.qualityStatus === "passed" ? "已通过" : report.qualityStatus === "warning" ? "有提醒" : report.qualityStatus === "failed" ? "需检查" : "未检查"}
+                </span>
+              </Link>
             ))}
           </div>
         )}

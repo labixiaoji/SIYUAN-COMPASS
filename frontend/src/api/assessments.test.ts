@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { deleteAssessmentDraft, fetchAssessmentDraft, saveAssessmentDraft } from "./assessments";
+import { deleteAssessmentDraft, fetchAssessmentDraft, fetchAssessmentJobDraft, saveAssessmentDraft } from "./assessments";
 
 describe("assessment draft API", () => {
   beforeEach(() => {
@@ -49,5 +49,21 @@ describe("assessment draft API", () => {
     await deleteAssessmentDraft();
     const request = (fetch as ReturnType<typeof vi.fn>).mock.calls[0][1] as RequestInit;
     expect(request.method).toBe("DELETE");
+  });
+
+  it("从失败任务读取恢复问卷", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      jobId: "job-1",
+      answers: { collegeMajor: "计算机" },
+      currentStep: 2,
+      version: 4,
+      source: "cloud_draft"
+    }), {
+      headers: { "Content-Type": "application/json" },
+      status: 200
+    })));
+
+    await fetchAssessmentJobDraft("job-1");
+    expect((fetch as ReturnType<typeof vi.fn>).mock.calls[0][0]).toContain("/assessment-jobs/job-1/draft");
   });
 });

@@ -92,6 +92,7 @@ CREATE TABLE IF NOT EXISTS assessment_choices (
 CREATE TABLE IF NOT EXISTS assessment_drafts (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+    source_job_id TEXT,
     answers JSONB NOT NULL,
     current_step INTEGER NOT NULL DEFAULT 0,
     version INTEGER NOT NULL DEFAULT 1,
@@ -99,6 +100,9 @@ CREATE TABLE IF NOT EXISTS assessment_drafts (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     expires_at TIMESTAMPTZ NOT NULL
 );
+
+ALTER TABLE assessment_drafts
+    ADD COLUMN IF NOT EXISTS source_job_id TEXT;
 
 CREATE TABLE IF NOT EXISTS career_profiles (
     id TEXT PRIMARY KEY,
@@ -195,6 +199,8 @@ CREATE INDEX IF NOT EXISTS idx_assessment_choices_assessment_id
     ON assessment_choices(assessment_id);
 CREATE INDEX IF NOT EXISTS idx_assessment_drafts_expires_at
     ON assessment_drafts(expires_at);
+CREATE INDEX IF NOT EXISTS idx_assessment_drafts_source_job_id
+    ON assessment_drafts(source_job_id);
 CREATE INDEX IF NOT EXISTS idx_career_profiles_response_id
     ON career_profiles(response_id);
 CREATE INDEX IF NOT EXISTS idx_reports_user_id_created_at
@@ -463,6 +469,7 @@ def _assessment_draft_from_row(row: dict[str, Any] | None) -> dict[str, Any] | N
     return {
         "id": row["id"],
         "userId": row["user_id"],
+        "sourceJobId": row.get("source_job_id"),
         "answers": _draft_storage_record(dict(row["answers"] or {})),
         "currentStep": int(row["current_step"]),
         "version": int(row["version"]),
@@ -478,7 +485,7 @@ def get_assessment_draft(user_id: str) -> dict[str, Any] | None:
         row = connection.execute(
             """
             SELECT id, user_id, answers, current_step, version,
-                   created_at, updated_at, expires_at
+                   created_at, updated_at, expires_at, source_job_id
             FROM assessment_drafts
             WHERE user_id = %s
             """,
@@ -516,7 +523,7 @@ def save_assessment_draft(
         row = connection.execute(
             """
             SELECT id, user_id, answers, current_step, version,
-                   created_at, updated_at, expires_at
+                   created_at, updated_at, expires_at, source_job_id
             FROM assessment_drafts
             WHERE user_id = %s
             FOR UPDATE
@@ -555,14 +562,15 @@ def save_assessment_draft(
             connection.execute(
                 """
                 INSERT INTO assessment_drafts (
-                    id, user_id, answers, current_step, version,
+                    id, user_id, source_job_id, answers, current_step, version,
                     created_at, updated_at, expires_at
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 (
                     draft_id,
                     user_id,
+                    None,
                     Jsonb(record),
                     current_step,
                     next_version,
@@ -581,6 +589,7 @@ def save_assessment_draft(
         "createdAt": _iso_timestamp(created_at),
         "updatedAt": now.isoformat(),
         "expiresAt": expires_at.isoformat(),
+        "sourceJobId": row["source_job_id"] if row else None,
     }
 
 
@@ -1043,9 +1052,12 @@ def _generation_job_from_row(row: dict[str, Any] | None) -> GenerationJobStatus 
     if not row:
         return None
     record = dict(row["data"])
+    created_at = _iso_timestamp(row.get("created_at"))
     updated_at = _iso_timestamp(row.get("updated_at"))
-    record.setdefault("createdAt", updated_at)
+    record.setdefault("createdAt", created_at or updated_at)
     record["updatedAt"] = updated_at
+    if "draft_available" in row:
+        record["draftAvailable"] = bool(row["draft_available"])
     return GenerationJobStatus.model_validate(record)
 
 
@@ -1115,7 +1127,7 @@ def save_generation_job_if_user_idle(
         ).fetchone()
         active_row = connection.execute(
             """
-            SELECT data, updated_at
+            SELECT data, created_at, updated_at, input_data IS NOT NULL AS draft_available
             FROM generation_jobs
             WHERE user_id = %s
               AND status IN ('queued', 'running')
@@ -1187,6 +1199,23 @@ def save_generation_job_if_user_idle(
                 job.userId,
             ),
         )
+        if input_data is not None:
+            connection.execute(
+                """
+                UPDATE assessment_drafts
+                SET source_job_id = %s,
+                    answers = %s,
+                    updated_at = %s
+                WHERE user_id = %s
+                  AND expires_at > now()
+                """,
+                (
+                    job.jobId,
+                    Jsonb(_draft_storage_record(input_data)),
+                    datetime.now(timezone.utc),
+                    job.userId,
+                ),
+            )
     return None
 
 
@@ -1201,6 +1230,80 @@ def load_generation_job_input(job_id: str) -> dict[str, Any] | None:
     return dict(row["input_data"])
 
 
+def load_generation_job_recovery_draft(
+    job_id: str,
+    *,
+    user_id: str | None = None,
+) -> dict[str, Any] | None:
+    """Load a retained failed-job snapshot without exposing job internals.
+
+    The current cloud draft is preferred only when it was associated with this
+    job.  Otherwise the immutable, privacy-filtered submission snapshot is the
+    recovery source.  ``user_id`` is optional for administrator reads and is
+    mandatory at the API boundary for student reads.
+    """
+    predicates = ["jobs.job_id = %s"]
+    params: list[Any] = [job_id]
+    if user_id is not None:
+        predicates.append("jobs.user_id = %s")
+        params.append(user_id)
+    with _connect() as connection:
+        row = connection.execute(
+            f"""
+            SELECT jobs.job_id,
+                   jobs.user_id,
+                   jobs.status,
+                   jobs.input_data,
+                   jobs.created_at AS job_created_at,
+                   jobs.updated_at AS job_updated_at,
+                   drafts.source_job_id,
+                   drafts.answers AS draft_answers,
+                   drafts.current_step AS draft_current_step,
+                   drafts.version AS draft_version,
+                   drafts.created_at AS draft_created_at,
+                   drafts.updated_at AS draft_updated_at
+            FROM generation_jobs AS jobs
+            LEFT JOIN assessment_drafts AS drafts
+              ON drafts.user_id = jobs.user_id
+             AND drafts.expires_at > now()
+            WHERE {' AND '.join(predicates)}
+            """,
+            params,
+        ).fetchone()
+
+    if not row or row["status"] not in {"failed", "cancelled"} or row["input_data"] is None:
+        return None
+
+    input_record = _generation_input_storage_record(dict(row["input_data"] or {}))
+    input_record.pop("userId", None)
+    draft_record = None
+    if row["source_job_id"] == job_id and row["draft_answers"] is not None:
+        draft_record = _draft_storage_record(dict(row["draft_answers"] or {}))
+    # The submitted job snapshot is the freshest, privacy-filtered version of
+    # the form.  Merge it over the cloud draft so a final keystroke that had
+    # not reached the draft debounce timer cannot be lost during recovery;
+    # retain the draft only for its step/version metadata.
+    answers = (
+        {**draft_record, **input_record}
+        if draft_record is not None
+        else input_record
+    )
+    source = "cloud_draft" if draft_record is not None else "job_input"
+    return {
+        "jobId": row["job_id"],
+        "answers": answers,
+        "currentStep": int(row["draft_current_step"] or 0) if draft_record is not None else 0,
+        "version": int(row["draft_version"] or 0) if row["draft_version"] is not None else 0,
+        "source": source,
+        "createdAt": _iso_timestamp(
+            row["draft_created_at"] if draft_record is not None else row["job_created_at"]
+        ),
+        "updatedAt": _iso_timestamp(
+            row["draft_updated_at"] if draft_record is not None else row["job_updated_at"]
+        ),
+    }
+
+
 def claim_generation_job(
     job_id: str,
     *,
@@ -1213,6 +1316,7 @@ def claim_generation_job(
         "progress": 10,
         "message": "正在整理问卷答案和生成任务。",
         "error": None,
+        "failure": None,
     }
     with _connect() as connection:
         row = connection.execute(
@@ -1236,7 +1340,8 @@ def claim_generation_job(
                       AND (lease_expires_at IS NULL OR lease_expires_at <= now())
                   )
               )
-            RETURNING data, updated_at
+            RETURNING data, created_at, updated_at,
+                      input_data IS NOT NULL AS draft_available
             """,
             (claim_token, max(lease_seconds, 1), Jsonb(updates), job_id),
         ).fetchone()
@@ -1284,7 +1389,13 @@ def update_generation_job_conditionally(
     expected_statuses: tuple[str, ...],
     claim_token: str | None = None,
     clear_private_state: bool = False,
+    clear_input_data: bool | None = None,
+    release_claim: bool | None = None,
 ) -> GenerationJobStatus | None:
+    if clear_input_data is None:
+        clear_input_data = clear_private_state
+    if release_claim is None:
+        release_claim = clear_private_state
     clauses = ["job_id = %s", "status = ANY(%s)"]
     where_params: list[Any] = [job_id, list(expected_statuses)]
     if claim_token is not None:
@@ -1305,18 +1416,24 @@ def update_generation_job_conditionally(
                 claim_token = CASE WHEN %s THEN NULL ELSE claim_token END,
                 lease_expires_at = CASE WHEN %s THEN NULL ELSE lease_expires_at END
             WHERE {' AND '.join(clauses)}
-            RETURNING data, updated_at
+            RETURNING data, created_at, updated_at,
+                      input_data IS NOT NULL AS draft_available
             """,
             (
                 new_status,
                 new_stage,
                 Jsonb(updates),
-                clear_private_state,
-                clear_private_state,
-                clear_private_state,
+                clear_input_data,
+                release_claim,
+                release_claim,
                 *where_params,
             ),
         ).fetchone()
+        if row and clear_input_data and new_status == "success":
+            connection.execute(
+                "DELETE FROM assessment_drafts WHERE source_job_id = %s",
+                (job_id,),
+            )
     return _generation_job_from_row(row)
 
 
@@ -1330,7 +1447,7 @@ def cancel_generation_job_record(job_id: str) -> GenerationJobStatus | None:
             "error": None,
         },
         expected_statuses=("queued", "running"),
-        clear_private_state=True,
+        release_claim=True,
     )
 
 
@@ -1459,7 +1576,12 @@ def clear_expired_speech_quota_counters(current_day: date) -> int:
 def find_generation_job(job_id: str) -> GenerationJobStatus | None:
     with _connect() as connection:
         row = connection.execute(
-            "SELECT data, updated_at FROM generation_jobs WHERE job_id = %s",
+            """
+            SELECT data, created_at, updated_at,
+                   input_data IS NOT NULL AS draft_available
+            FROM generation_jobs
+            WHERE job_id = %s
+            """,
             (job_id,),
         ).fetchone()
     return _generation_job_from_row(row)
@@ -1469,7 +1591,7 @@ def get_user_generation_jobs(user_id: str, limit: int = 20) -> list[dict[str, An
     with _connect() as connection:
         rows = connection.execute(
             """
-            SELECT data, updated_at
+            SELECT data, created_at, updated_at, input_data IS NOT NULL AS draft_available
             FROM generation_jobs
             WHERE user_id = %s
               AND status <> 'success'
@@ -1480,10 +1602,317 @@ def get_user_generation_jobs(user_id: str, limit: int = 20) -> list[dict[str, An
         ).fetchall()
 
     return [
-        job.model_dump(mode="json")
+        _public_generation_job_record(job)
         for row in rows
         if (job := _generation_job_from_row(row)) is not None
     ]
+
+
+def _admin_job_student(row: dict[str, Any]) -> dict[str, str]:
+    display_name = (
+        row.get("input_student_name")
+        or row.get("display_name")
+        or row.get("username")
+        or "未知用户"
+    )
+    return {
+        "id": str(row.get("user_id") or ""),
+        "username": row.get("username") or "未知账号",
+        "displayName": display_name,
+    }
+
+
+def _admin_job_record(job: GenerationJobStatus, row: dict[str, Any]) -> dict[str, Any]:
+    record = job.model_dump(mode="json")
+    record["draftAvailable"] = bool(row.get("draft_available"))
+    record["student"] = _admin_job_student(row)
+    if job.error and not job.failure:
+        legacy_message = redact_obvious_contact_details(str(job.error))[:600]
+        record["error"] = legacy_message
+        record["failure"] = {
+            "code": "LEGACY_ERROR",
+            "stage": job.stage,
+            "message": legacy_message,
+            "retryable": False,
+            "traceId": job.jobId,
+        }
+    return record
+
+
+def _public_generation_job_record(job: GenerationJobStatus) -> dict[str, Any]:
+    """Return the student-safe projection used by the report history API."""
+    record = job.model_dump(mode="json", exclude={"failure"})
+    if job.failure:
+        record["error"] = job.failure.message
+    return record
+
+
+def _safe_job_failure_data(job_data: dict[str, Any]) -> dict[str, Any] | None:
+    failure = job_data.get("failure")
+    if isinstance(failure, dict):
+        return failure
+    error = job_data.get("error")
+    if not error:
+        return None
+    message = redact_obvious_contact_details(str(error))[:600]
+    return {
+        "code": "LEGACY_ERROR",
+        "stage": job_data.get("stage") or "unknown",
+        "message": message,
+        "retryable": False,
+        "traceId": job_data.get("jobId"),
+    }
+
+
+def _admin_job_filters(
+    *,
+    status: str | None = None,
+    keyword: str | None = None,
+) -> tuple[str, list[Any]]:
+    clauses = ["1 = 1"]
+    params: list[Any] = []
+    if status and status != "all":
+        clauses.append("jobs.status = %s")
+        params.append(status)
+    if keyword and keyword.strip():
+        pattern = f"%{keyword.strip()}%"
+        clauses.append(
+            "("
+            "jobs.job_id ILIKE %s "
+            "OR COALESCE(users.username, '') ILIKE %s "
+            "OR COALESCE(users.display_name, '') ILIKE %s "
+            "OR COALESCE(jobs.data->>'responseId', '') ILIKE %s "
+            "OR COALESCE(jobs.data->'failure'->>'code', '') ILIKE %s "
+            "OR COALESCE(jobs.data->>'error', '') ILIKE %s"
+            ")"
+        )
+        params.extend([pattern] * 6)
+    return " AND ".join(clauses), params
+
+
+def get_admin_generation_jobs(
+    *,
+    status: str = "all",
+    keyword: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> dict[str, Any]:
+    where_sql, filter_params = _admin_job_filters(status=status, keyword=keyword)
+    with _connect() as connection:
+        total_row = connection.execute(
+            f"""
+            SELECT COUNT(*) AS total
+            FROM generation_jobs AS jobs
+            LEFT JOIN users ON users.id = jobs.user_id
+            WHERE {where_sql}
+            """,
+            filter_params,
+        ).fetchone()
+        rows = connection.execute(
+            f"""
+            SELECT jobs.data,
+                   jobs.created_at,
+                   jobs.updated_at,
+                   jobs.input_data IS NOT NULL AS draft_available,
+                   jobs.user_id,
+                   users.username,
+                   users.display_name,
+                   jobs.input_data->>'studentName' AS input_student_name
+            FROM generation_jobs AS jobs
+            LEFT JOIN users ON users.id = jobs.user_id
+            WHERE {where_sql}
+            ORDER BY jobs.updated_at DESC
+            LIMIT %s OFFSET %s
+            """,
+            [*filter_params, max(limit, 1), max(offset, 0)],
+        ).fetchall()
+
+    items = []
+    for row in rows:
+        job = _generation_job_from_row(row)
+        if job:
+            items.append(_admin_job_record(job, row))
+    return {"total": int(total_row["total"]), "items": items}
+
+
+def get_admin_generation_job(job_id: str) -> dict[str, Any] | None:
+    with _connect() as connection:
+        row = connection.execute(
+            """
+            SELECT jobs.data,
+                   jobs.created_at,
+                   jobs.updated_at,
+                   jobs.input_data IS NOT NULL AS draft_available,
+                   jobs.user_id,
+                   users.username,
+                   users.display_name,
+                   jobs.input_data->>'studentName' AS input_student_name
+            FROM generation_jobs AS jobs
+            LEFT JOIN users ON users.id = jobs.user_id
+            WHERE jobs.job_id = %s
+            """,
+            (job_id,),
+        ).fetchone()
+    job = _generation_job_from_row(row)
+    return _admin_job_record(job, row) if job and row else None
+
+
+_ADMIN_ASSESSMENT_CTE = """
+WITH persisted AS (
+    SELECT
+        'response:' || responses.id AS record_id,
+        responses.id AS response_id,
+        jobs.job_id,
+        responses.user_id,
+        responses.submitted_at::text AS submitted_at,
+        responses.grade,
+        responses.college_major,
+        responses.data AS assessment_data,
+        jobs.data AS job_data,
+        jobs.status AS task_status,
+        jobs.updated_at::text AS job_updated_at,
+        (jobs.input_data IS NOT NULL) AS draft_available,
+        reports.data AS report_data
+    FROM assessment_responses AS responses
+    LEFT JOIN LATERAL (
+        SELECT generation_jobs.job_id,
+               generation_jobs.status,
+               generation_jobs.data,
+               generation_jobs.updated_at,
+               generation_jobs.input_data
+        FROM generation_jobs
+        WHERE generation_jobs.user_id = responses.user_id
+          AND generation_jobs.data->>'responseId' = responses.id
+        ORDER BY generation_jobs.created_at DESC
+        LIMIT 1
+    ) AS jobs ON TRUE
+    LEFT JOIN LATERAL (
+        SELECT reports.data
+        FROM reports
+        WHERE reports.response_id = responses.id
+        ORDER BY reports.created_at DESC
+        LIMIT 1
+    ) AS reports ON TRUE
+), orphan_jobs AS (
+    SELECT
+        'job:' || jobs.job_id AS record_id,
+        NULL::text AS response_id,
+        jobs.job_id,
+        jobs.user_id,
+        COALESCE(jobs.created_at, jobs.updated_at)::text AS submitted_at,
+        jobs.input_data->>'grade' AS grade,
+        jobs.input_data->>'collegeMajor' AS college_major,
+        jobs.input_data AS assessment_data,
+        jobs.data AS job_data,
+        jobs.status AS task_status,
+        jobs.updated_at::text AS job_updated_at,
+        TRUE AS draft_available,
+        NULL::jsonb AS report_data
+    FROM generation_jobs AS jobs
+    WHERE jobs.input_data IS NOT NULL
+      AND NOT EXISTS (
+          SELECT 1
+          FROM assessment_responses AS responses
+          WHERE responses.id = jobs.data->>'responseId'
+      )
+), unified AS (
+    SELECT * FROM persisted
+    UNION ALL
+    SELECT * FROM orphan_jobs
+)
+"""
+
+
+def get_admin_assessments(
+    *,
+    status: str = "all",
+    keyword: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> dict[str, Any]:
+    clauses = ["1 = 1"]
+    params: list[Any] = []
+    if status and status != "all":
+        clauses.append(
+            "COALESCE(unified.task_status, CASE WHEN unified.report_data IS NOT NULL THEN 'success' ELSE 'unknown' END) = %s"
+        )
+        params.append(status)
+    if keyword and keyword.strip():
+        pattern = f"%{keyword.strip()}%"
+        clauses.append(
+            "("
+            "COALESCE(unified.assessment_data->>'studentName', '') ILIKE %s "
+            "OR COALESCE(users.username, '') ILIKE %s "
+            "OR COALESCE(users.display_name, '') ILIKE %s "
+            "OR COALESCE(unified.college_major, '') ILIKE %s "
+            "OR unified.record_id ILIKE %s"
+            ")"
+        )
+        params.extend([pattern] * 5)
+    where_sql = " AND ".join(clauses)
+
+    with _connect() as connection:
+        total_row = connection.execute(
+            f"""
+            {_ADMIN_ASSESSMENT_CTE}
+            SELECT COUNT(*) AS total
+            FROM unified
+            LEFT JOIN users ON users.id = unified.user_id
+            WHERE {where_sql}
+            """,
+            params,
+        ).fetchone()
+        rows = connection.execute(
+            f"""
+            {_ADMIN_ASSESSMENT_CTE}
+            SELECT unified.*, users.username, users.display_name
+            FROM unified
+            LEFT JOIN users ON users.id = unified.user_id
+            WHERE {where_sql}
+            ORDER BY unified.submitted_at DESC NULLS LAST
+            LIMIT %s OFFSET %s
+            """,
+            [*params, max(limit, 1), max(offset, 0)],
+        ).fetchall()
+
+    items: list[dict[str, Any]] = []
+    for row in rows:
+        assessment_data = dict(row["assessment_data"] or {})
+        job_data = dict(row["job_data"] or {})
+        report_data = dict(row["report_data"] or {}) if row["report_data"] else None
+        task_status = row["task_status"] or ("success" if report_data else "unknown")
+        report_status = report_data.get("generationStatus") if report_data else None
+        if report_status is None and task_status == "failed":
+            report_status = "failed"
+        display_name = (
+            assessment_data.get("studentName")
+            or row["display_name"]
+            or row["username"]
+            or "未知用户"
+        )
+        items.append(
+            {
+                "recordId": row["record_id"],
+                "jobId": row["job_id"],
+                "responseId": row["response_id"],
+                "student": {
+                    "id": row["user_id"] or "",
+                    "username": row["username"] or "未知账号",
+                    "displayName": display_name,
+                },
+                "submittedAt": row["submitted_at"],
+                "educationStage": assessment_data.get("educationStage") or "",
+                "grade": row["grade"] or "",
+                "collegeMajor": row["college_major"] or "",
+                "taskStatus": task_status,
+                "reportStatus": report_status,
+                "reportId": report_data.get("id") if report_data else job_data.get("reportId"),
+                "draftAvailable": bool(row["draft_available"]),
+                "failure": _safe_job_failure_data(job_data),
+                "error": (_safe_job_failure_data(job_data) or {}).get("message"),
+            }
+        )
+    return {"total": int(total_row["total"]), "items": items}
 
 
 def get_metrics() -> dict[str, Any]:
@@ -1491,9 +1920,23 @@ def get_metrics() -> dict[str, Any]:
         metrics = connection.execute(
             """
             SELECT
-                (SELECT COUNT(*) FROM assessment_responses) AS assessment_count,
+                (
+                    (SELECT COUNT(*) FROM assessment_responses)
+                    + (
+                        SELECT COUNT(*)
+                        FROM generation_jobs AS jobs
+                        WHERE jobs.input_data IS NOT NULL
+                          AND NOT EXISTS (
+                              SELECT 1
+                              FROM assessment_responses AS responses
+                              WHERE responses.id = jobs.data->>'responseId'
+                          )
+                    )
+                ) AS assessment_count,
                 (SELECT COUNT(*) FROM reports WHERE generation_status = 'success') AS report_success_count,
-                (SELECT COUNT(*) FROM reports WHERE generation_status = 'failed') AS report_failed_count,
+                (SELECT COUNT(*) FROM generation_jobs WHERE status = 'failed') AS report_failed_count,
+                (SELECT COUNT(*) FROM generation_jobs WHERE status IN ('queued', 'running')) AS generation_running_count,
+                (SELECT COUNT(*) FROM generation_jobs WHERE status = 'queued') AS generation_queued_count,
                 (SELECT COUNT(*) FROM report_feedback) AS feedback_count,
                 COALESCE(ROUND(AVG(understanding_score)::numeric, 1), 0) AS average_understanding_score,
                 COALESCE(ROUND(AVG(insight_score)::numeric, 1), 0) AS average_insight_score,
@@ -1521,6 +1964,9 @@ def get_metrics() -> dict[str, Any]:
         "assessmentCount": metrics["assessment_count"],
         "reportSuccessCount": metrics["report_success_count"],
         "reportFailedCount": metrics["report_failed_count"],
+        "generationFailedCount": metrics["report_failed_count"],
+        "generationRunningCount": metrics["generation_running_count"],
+        "generationQueuedCount": metrics["generation_queued_count"],
         "feedbackCount": metrics["feedback_count"],
         "averageUnderstandingScore": float(metrics["average_understanding_score"]),
         "averageInsightScore": float(metrics["average_insight_score"]),

@@ -1,5 +1,3 @@
-import logging
-
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.schemas.assessment import AssessmentResponseInput, AssessmentSubmitResult
@@ -9,7 +7,7 @@ from app.schemas.assessment_draft import (
     AssessmentDraftEnvelope,
     AssessmentDraftUpsert,
 )
-from app.schemas.generation_job import GenerationJobCreated, GenerationJobStatus
+from app.schemas.generation_job import GenerationJobCreated, GenerationJobDraft, GenerationJobStatus
 from app.services.assessment_validator import validate_assessment_fields
 from app.services.auth import require_user
 from app.services.generation_jobs import (
@@ -25,11 +23,11 @@ from app.storage.json_db import (
     AssessmentDraftConflictError,
     delete_assessment_draft,
     get_assessment_draft,
+    load_generation_job_recovery_draft,
     save_assessment_draft,
 )
 
 router = APIRouter(tags=["assessments"])
-logger = logging.getLogger(__name__)
 
 
 def _reserve_job(user_id: str, input_data: AssessmentResponseInput) -> GenerationJobStatus:
@@ -59,13 +57,10 @@ def _reserve_job(user_id: str, input_data: AssessmentResponseInput) -> Generatio
         ) from error
 
 
-def _clear_draft_after_job_created(user_id: str) -> None:
-    try:
-        delete_assessment_draft(user_id)
-    except Exception:
-        # A draft is a recovery aid; failure to remove it must not turn a
-        # successfully queued report into a failed submission.
-        logger.exception("failed to clear assessment draft after job creation")
+def _student_job_view(job: GenerationJobStatus) -> GenerationJobStatus:
+    """Hide administrator diagnostics from the student polling endpoint."""
+    safe_error = job.failure.message if job.failure else job.error
+    return job.model_copy(update={"failure": None, "error": safe_error})
 
 
 @router.get("/assessment-draft", response_model=AssessmentDraftEnvelope)
@@ -116,7 +111,6 @@ async def create_assessment_job(
 
     authenticated_input = input_data.model_copy(update={"userId": user["id"]})
     job = _reserve_job(user["id"], authenticated_input)
-    _clear_draft_after_job_created(user["id"])
     start_generation_job(job.jobId)
     return GenerationJobCreated(jobId=job.jobId, status="queued")
 
@@ -128,7 +122,28 @@ def get_assessment_job(job_id: str, user=Depends(require_user)) -> GenerationJob
         raise HTTPException(status_code=404, detail={"error": "生成任务不存在或已过期"})
     if user["role"] != "admin" and job.userId != user["id"]:
         raise HTTPException(status_code=403, detail={"error": "无权查看该生成任务"})
-    return job
+    if user["role"] == "admin":
+        return job
+    return _student_job_view(job)
+
+
+@router.get("/assessment-jobs/{job_id}/draft", response_model=GenerationJobDraft)
+def get_assessment_job_draft(job_id: str, user=Depends(require_user)) -> GenerationJobDraft:
+    job = get_generation_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail={"error": "生成任务不存在或已过期"})
+    if user["role"] != "admin" and job.userId != user["id"]:
+        raise HTTPException(status_code=403, detail={"error": "无权查看该生成任务"})
+    draft = load_generation_job_recovery_draft(
+        job_id,
+        user_id=None if user["role"] == "admin" else user["id"],
+    )
+    if not draft:
+        raise HTTPException(
+            status_code=410,
+            detail={"error": "该失败任务没有可恢复的问卷草稿，或已超过保留期限。"},
+        )
+    return GenerationJobDraft.model_validate(draft)
 
 
 @router.post("/assessment-jobs/{job_id}/cancel", response_model=GenerationJobStatus)
@@ -139,12 +154,12 @@ def cancel_assessment_job(job_id: str, user=Depends(require_user)) -> Generation
     if user["role"] != "admin" and job.userId != user["id"]:
         raise HTTPException(status_code=403, detail={"error": "无权取消该生成任务"})
     if job.status not in {"queued", "running"}:
-        return job
+        return job if user["role"] == "admin" else _student_job_view(job)
 
     cancelled_job = cancel_generation_job(job_id)
     if not cancelled_job:
         raise HTTPException(status_code=404, detail={"error": "生成任务不存在或已过期"})
-    return cancelled_job
+    return cancelled_job if user["role"] == "admin" else _student_job_view(cancelled_job)
 
 
 @router.post("/assessments", response_model=AssessmentSubmitResult)
@@ -161,7 +176,6 @@ async def submit_assessment(
 
     authenticated_input = input_data.model_copy(update={"userId": user["id"]})
     job = _reserve_job(user["id"], authenticated_input)
-    _clear_draft_after_job_created(user["id"])
     await run_generation_job(job.jobId)
     completed = get_generation_job(job.jobId)
     if not completed:

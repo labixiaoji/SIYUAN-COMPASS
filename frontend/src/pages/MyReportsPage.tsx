@@ -174,7 +174,14 @@ export function MyReportsPage() {
                       {cancellingJobId === job.jobId ? "取消中..." : "取消生成"}
                     </button>
                   )}
-                  {job.status === "failed" && <Link className="button secondary" to="/assessment">重新填写</Link>}
+                  {job.status === "failed" && (
+                    <Link
+                      className="button secondary"
+                      to={job.draftAvailable ? `/assessment?recoverJobId=${encodeURIComponent(job.jobId)}` : "/assessment"}
+                    >
+                      {job.draftAvailable ? "恢复问卷并重新生成" : "重新填写"}
+                    </Link>
+                  )}
                 </div>
               </article>
             ))}

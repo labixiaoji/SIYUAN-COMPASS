@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 import asyncio
+import logging
+import re
 from contextlib import suppress
 from datetime import datetime, timezone
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 from app.core.config import get_settings
+from app.core.data_privacy import redact_obvious_contact_details
 from app.schemas.assessment import AssessmentResponse, AssessmentResponseInput
-from app.schemas.generation_job import GenerationJobStatus
+from app.schemas.generation_job import GenerationFailure, GenerationJobStatus
 from app.services.profile_analyzer import ProfileAnalysisError, analyze_career_profile
 from app.services.report_generator import ReportGenerationError, generate_report
 from app.storage.json_db import (
@@ -31,6 +34,7 @@ from app.storage.json_db import (
 
 ACTIVE_TASKS: dict[str, asyncio.Task[None]] = {}
 ACTIVE_TASK_LOOPS: dict[str, asyncio.AbstractEventLoop] = {}
+logger = logging.getLogger(__name__)
 
 
 class ActiveGenerationJobError(RuntimeError):
@@ -48,6 +52,87 @@ class GenerationQuotaExceededError(RuntimeError):
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _failure_stage(stage: str) -> str:
+    normalized = (stage or "").lower()
+    if normalized.startswith("profile"):
+        return "profile"
+    if normalized.startswith("report"):
+        return "report"
+    if normalized in {"saving", "persistence"}:
+        return "persistence"
+    return "unknown"
+
+
+def _failure_detail(error: BaseException) -> str:
+    detail = str(error).strip() or "未提供具体错误信息"
+    # Error strings can contain provider payload fragments or accidental
+    # contact details. Keep the administrator diagnostic useful but bounded.
+    detail = re.sub(
+        r"(?i)(api[-_ ]?key|authorization|password|passwd|secret|token)(?:['\"]?\s*[:=]\s*['\"]?)[^,;\s'\"}]+",
+        r"\1=[已隐藏]",
+        detail,
+    )
+    detail = re.sub(r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+", "Bearer [已隐藏]", detail)
+    detail = redact_obvious_contact_details(detail)
+    return detail[:600]
+
+
+def _failure_code(stage: str, error: BaseException) -> tuple[str, bool]:
+    normalized = f"{error} {error.__cause__ or ''}".lower()
+    prefix = _failure_stage(stage).upper()
+    if any(item in normalized for item in ("timeout", "timed out", "超时")):
+        return f"{prefix}_MODEL_TIMEOUT", True
+    if any(item in normalized for item in ("401", "403", "api_key", "api key", "未配置", "缺少")):
+        return f"{prefix}_MODEL_AUTH", False
+    if any(item in normalized for item in ("429", "quota", "rate limit", "限流", "额度")):
+        return f"{prefix}_MODEL_QUOTA", True
+    if "质量" in normalized:
+        return f"{prefix}_QUALITY_FAILED", False
+    if any(item in normalized for item in ("json", "schema", "校验", "结构")):
+        return f"{prefix}_SCHEMA_INVALID", False
+    if prefix == "PERSISTENCE":
+        return "PERSISTENCE_ERROR", True
+    return f"{prefix}_INTERNAL_ERROR", False
+
+
+def build_generation_failure(job_id: str, stage: str, error: BaseException) -> GenerationFailure:
+    code, retryable = _failure_code(stage, error)
+    try:
+        settings = get_settings()
+        provider = (getattr(settings, "llm_provider", "") or "").strip().lower() or None
+    except Exception:
+        provider = None
+    status_match = re.search(r"\b([45]\d{2})\b", str(error))
+    return GenerationFailure(
+        code=code,
+        stage=_failure_stage(stage),
+        message=_failure_detail(error),
+        retryable=retryable,
+        provider=provider,
+        providerStatus=int(status_match.group(1)) if status_match else None,
+        traceId=job_id,
+        occurredAt=now_iso(),
+    )
+
+
+def _failure_updates(job_id: str, stage: str, error: BaseException) -> dict[str, object]:
+    failure = build_generation_failure(job_id, stage, error)
+    logger.warning(
+        "generation job failed job_id=%s stage=%s code=%s retryable=%s provider=%s provider_status=%s detail=%s",
+        job_id,
+        failure.stage,
+        failure.code,
+        failure.retryable,
+        failure.provider or "unknown",
+        failure.providerStatus or "unknown",
+        failure.message,
+    )
+    return {
+        "error": failure.message,
+        "failure": failure.model_dump(mode="json"),
+    }
 
 
 def create_generation_job(
@@ -187,12 +272,15 @@ def _update_running_job(
     terminal: bool = False,
     **updates: object,
 ) -> GenerationJobStatus | None:
+    preserve_input = updates.get("status") in {"failed", "cancelled"}
     return update_generation_job_conditionally(
         job_id,
         dict(updates),
         expected_statuses=("running",),
         claim_token=claim_token,
-        clear_private_state=terminal,
+        clear_private_state=terminal and not preserve_input,
+        clear_input_data=terminal and not preserve_input,
+        release_claim=terminal,
     )
 
 
@@ -232,6 +320,8 @@ async def run_generation_job(job_id: str) -> None:
                     message="生涯报告生成完成。",
                     reportId=saved_report.id,
                     generationStatus=saved_report.generationStatus,
+                    error=None,
+                    failure=None,
                 )
                 return
 
@@ -244,7 +334,7 @@ async def run_generation_job(job_id: str) -> None:
                 status="failed",
                 stage="failed",
                 message="生成任务缺少问卷数据。",
-                error="generation job input is missing",
+                **_failure_updates(job_id, "persistence", RuntimeError("generation job input is missing")),
             )
             return
         input_data = AssessmentResponseInput.model_validate(raw_input)
@@ -283,7 +373,7 @@ async def run_generation_job(job_id: str) -> None:
                 status="failed",
                 stage="profile_failed",
                 message="用户画像生成失败。",
-                error=str(error),
+                **_failure_updates(job_id, "profile", error),
             )
             return
 
@@ -324,7 +414,7 @@ async def run_generation_job(job_id: str) -> None:
                 status="failed",
                 stage="report_failed",
                 message="生涯报告生成失败。",
-                error=str(error),
+                **_failure_updates(job_id, "report", error),
             )
             return
 
@@ -354,6 +444,8 @@ async def run_generation_job(job_id: str) -> None:
             message="生涯报告生成完成。",
             reportId=report.id,
             generationStatus=report.generationStatus,
+            error=None,
+            failure=None,
         )
     except asyncio.CancelledError:
         # User cancellation already made a conditional terminal transition.
@@ -367,7 +459,7 @@ async def run_generation_job(job_id: str) -> None:
             status="failed",
             stage="failed",
             message="生成流程发生异常。",
-            error=str(error),
+            **_failure_updates(job_id, "unknown", error),
         )
     finally:
         if heartbeat:

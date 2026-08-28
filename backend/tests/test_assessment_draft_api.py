@@ -24,6 +24,7 @@ except ModuleNotFoundError:
 
 from app.api import assessments
 from app.schemas.assessment_draft import AssessmentDraftUpsert
+from app.schemas.generation_job import GenerationFailure, GenerationJobStatus
 from app.storage.json_db import AssessmentDraftConflictError
 
 
@@ -79,6 +80,78 @@ class AssessmentDraftApiTest(unittest.TestCase):
 
         self.assertEqual(raised.exception.status_code, 409)
         self.assertEqual(raised.exception.detail["draft"]["version"], 1)
+
+
+class AssessmentJobPrivacyApiTest(unittest.TestCase):
+    def failed_job(self, user_id: str = "user-1") -> GenerationJobStatus:
+        return GenerationJobStatus(
+            jobId="job-1",
+            userId=user_id,
+            status="failed",
+            stage="report_failed",
+            progress=88,
+            message="生涯报告生成失败。",
+            error="模型请求失败：已脱敏",
+            failure=GenerationFailure(
+                code="REPORT_MODEL_TIMEOUT",
+                stage="report",
+                message="模型请求超时",
+                retryable=True,
+                traceId="job-1",
+            ),
+        )
+
+    def test_student_polling_hides_structured_admin_failure(self):
+        with patch.object(assessments, "get_generation_job", return_value=self.failed_job()):
+            result = assessments.get_assessment_job(
+                "job-1",
+                {"id": "user-1", "role": "student"},
+            )
+
+        self.assertIsNone(result.failure)
+        self.assertEqual(result.error, "模型请求超时")
+
+    def test_student_cancel_response_also_hides_structured_failure(self):
+        with patch.object(assessments, "get_generation_job", return_value=self.failed_job()):
+            result = assessments.cancel_assessment_job(
+                "job-1",
+                {"id": "user-1", "role": "student"},
+            )
+
+        self.assertIsNone(result.failure)
+        self.assertEqual(result.error, "模型请求超时")
+
+    def test_student_cannot_read_another_account_job_diagnostics(self):
+        with patch.object(assessments, "get_generation_job", return_value=self.failed_job()):
+            with self.assertRaises(HTTPException) as raised:
+                assessments.get_assessment_job(
+                    "job-1",
+                    {"id": "user-2", "role": "student"},
+                )
+
+        self.assertEqual(raised.exception.status_code, 403)
+
+    def test_student_recovery_reads_only_owner_job(self):
+        recovery = {
+            "jobId": "job-1",
+            "answers": {"collegeMajor": "计算机"},
+            "currentStep": 4,
+            "version": 3,
+            "source": "job_input",
+        }
+        with patch.object(assessments, "get_generation_job", return_value=self.failed_job()), patch.object(
+            assessments,
+            "load_generation_job_recovery_draft",
+            return_value=recovery,
+        ) as load:
+            result = assessments.get_assessment_job_draft(
+                "job-1",
+                {"id": "user-1", "role": "student"},
+            )
+
+        load.assert_called_once_with("job-1", user_id="user-1")
+        self.assertEqual(result.answers["collegeMajor"], "计算机")
+        self.assertEqual(result.currentStep, 4)
 
 
 if __name__ == "__main__":

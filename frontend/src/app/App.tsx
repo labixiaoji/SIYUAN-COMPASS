@@ -3,7 +3,14 @@ import { useAuth } from "../auth/AuthContext";
 import { ProtectedRoute } from "../auth/ProtectedRoute";
 import { AppFooter } from "../components/AppFooter";
 import { AdminAssessmentPage } from "../pages/AdminAssessmentPage";
+import { AdminAssessmentsPage } from "../pages/AdminAssessmentsPage";
+import { AdminAuditLogsPage } from "../pages/AdminAuditLogsPage";
+import { AdminGenerationJobDetailPage } from "../pages/AdminGenerationJobDetailPage";
+import { AdminGenerationJobDraftPage } from "../pages/AdminGenerationJobDraftPage";
+import { AdminGenerationJobsPage } from "../pages/AdminGenerationJobsPage";
+import { AdminLayout } from "../pages/AdminLayout";
 import { AdminPage } from "../pages/AdminPage";
+import { AdminReportsPage } from "../pages/AdminReportsPage";
 import { AdminReportEditPage } from "../pages/AdminReportEditPage";
 import { AssessmentPage } from "../pages/AssessmentPage";
 import { FeedbackPage } from "../pages/FeedbackPage";
@@ -48,9 +55,15 @@ export function App() {
           <Route path="/my-reports" element={<ProtectedRoute role="student"><MyReportsPage /></ProtectedRoute>} />
           <Route path="/reports/:reportId" element={<ProtectedRoute><ReportPage /></ProtectedRoute>} />
           <Route path="/reports/:reportId/feedback" element={<ProtectedRoute role="student"><FeedbackPage /></ProtectedRoute>} />
-          <Route path="/admin" element={<ProtectedRoute role="admin"><AdminPage /></ProtectedRoute>} />
-          <Route path="/admin/assessments/:responseId" element={<ProtectedRoute role="admin"><AdminAssessmentPage /></ProtectedRoute>} />
-          <Route path="/admin/reports/:reportId/edit" element={<ProtectedRoute role="admin"><AdminReportEditPage /></ProtectedRoute>} />
+          <Route path="/admin" element={<ProtectedRoute role="admin"><AdminLayout><AdminPage /></AdminLayout></ProtectedRoute>} />
+          <Route path="/admin/assessments" element={<ProtectedRoute role="admin"><AdminLayout><AdminAssessmentsPage /></AdminLayout></ProtectedRoute>} />
+          <Route path="/admin/assessments/:responseId" element={<ProtectedRoute role="admin"><AdminLayout><AdminAssessmentPage /></AdminLayout></ProtectedRoute>} />
+          <Route path="/admin/generation-jobs" element={<ProtectedRoute role="admin"><AdminLayout><AdminGenerationJobsPage /></AdminLayout></ProtectedRoute>} />
+          <Route path="/admin/generation-jobs/:jobId/draft" element={<ProtectedRoute role="admin"><AdminLayout><AdminGenerationJobDraftPage /></AdminLayout></ProtectedRoute>} />
+          <Route path="/admin/generation-jobs/:jobId" element={<ProtectedRoute role="admin"><AdminLayout><AdminGenerationJobDetailPage /></AdminLayout></ProtectedRoute>} />
+          <Route path="/admin/reports" element={<ProtectedRoute role="admin"><AdminLayout><AdminReportsPage /></AdminLayout></ProtectedRoute>} />
+          <Route path="/admin/reports/:reportId/edit" element={<ProtectedRoute role="admin"><AdminLayout><AdminReportEditPage /></AdminLayout></ProtectedRoute>} />
+          <Route path="/admin/audit-logs" element={<ProtectedRoute role="admin"><AdminLayout><AdminAuditLogsPage /></AdminLayout></ProtectedRoute>} />
           <Route path="*" element={<NotFoundPage />} />
         </Routes>
       </div>

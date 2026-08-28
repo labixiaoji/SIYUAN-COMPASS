@@ -60,6 +60,17 @@ class PostgresStorageSchemaTest(unittest.TestCase):
         self.assertIn('/admin/assessments/{response_id}', ADMIN_API_SOURCE)
         self.assertIn("find_response", ADMIN_API_SOURCE)
 
+    def test_admin_can_list_generation_failures_and_all_assessments(self):
+        self.assertIn('/admin/generation-jobs', ADMIN_API_SOURCE)
+        self.assertIn('/admin/assessments', ADMIN_API_SOURCE)
+        self.assertIn("get_admin_generation_jobs", STORAGE_SOURCE)
+        self.assertIn("get_admin_assessments", STORAGE_SOURCE)
+
+    def test_failed_job_recovery_uses_retained_input_and_draft_link(self):
+        self.assertIn("source_job_id", STORAGE_SOURCE)
+        self.assertIn("load_generation_job_recovery_draft", STORAGE_SOURCE)
+        self.assertIn("clear_input_data", STORAGE_SOURCE)
+
     def test_report_lookup_includes_account_display_name(self):
         self.assertIn("LEFT JOIN users ON users.id = reports.user_id", STORAGE_SOURCE)
         self.assertIn('record["accountDisplayName"]', STORAGE_SOURCE)

@@ -7,17 +7,29 @@ from app.schemas.report import AdminReportUpdate
 from app.services.auth import require_admin
 from app.services.report_quality_check import check_report_quality, count_chineseish_words
 from app.storage.json_db import (
+    get_admin_assessments,
     find_report,
     find_response,
     get_admin_audit_logs,
+    get_admin_generation_job,
+    get_admin_generation_jobs,
     get_admin_records,
     get_metrics,
     get_recent_reports,
+    load_generation_job_recovery_draft,
     record_admin_audit,
     update_report,
 )
 
 router = APIRouter(tags=["admin"])
+
+_GENERATION_JOB_STATUSES = {"all", "queued", "running", "success", "failed", "cancelled"}
+
+
+def _validate_job_status(status: str) -> str:
+    if status not in _GENERATION_JOB_STATUSES:
+        raise HTTPException(status_code=400, detail={"error": "不支持的生成任务状态"})
+    return status
 
 
 @router.get("/admin/metrics")
@@ -30,6 +42,66 @@ def admin_metrics(admin=Depends(require_admin)):
 def admin_records(admin=Depends(require_admin)):
     record_admin_audit(admin["id"], "admin.records.read", "report_collection", "all")
     return {"records": get_admin_records()}
+
+
+@router.get("/admin/assessments")
+def admin_assessments(
+    status: str = Query(default="all"),
+    keyword: str | None = Query(default=None, max_length=100),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    admin=Depends(require_admin),
+):
+    _validate_job_status(status)
+    record_admin_audit(admin["id"], "admin.assessments.read", "assessment_collection", "all")
+    return get_admin_assessments(
+        status=status,
+        keyword=keyword,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.get("/admin/generation-jobs")
+def admin_generation_jobs(
+    status: str = Query(default="all"),
+    keyword: str | None = Query(default=None, max_length=100),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    admin=Depends(require_admin),
+):
+    _validate_job_status(status)
+    record_admin_audit(admin["id"], "admin.generation_jobs.read", "generation_job_collection", status)
+    return get_admin_generation_jobs(
+        status=status,
+        keyword=keyword,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.get("/admin/generation-jobs/{job_id}/draft")
+def admin_generation_job_draft(job_id: str, admin=Depends(require_admin)):
+    job = get_admin_generation_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail={"error": "生成任务不存在或已过期"})
+    draft = load_generation_job_recovery_draft(job_id, user_id=job.get("userId"))
+    if not draft:
+        raise HTTPException(
+            status_code=410,
+            detail={"error": "该任务没有可查看的问卷草稿，或已超过保留期限。"},
+        )
+    record_admin_audit(admin["id"], "generation_job.draft.read", "generation_job", job_id)
+    return draft
+
+
+@router.get("/admin/generation-jobs/{job_id}")
+def admin_generation_job(job_id: str, admin=Depends(require_admin)):
+    job = get_admin_generation_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail={"error": "生成任务不存在或已过期"})
+    record_admin_audit(admin["id"], "generation_job.read", "generation_job", job_id)
+    return job
 
 
 @router.get("/admin/assessments/{response_id}")
