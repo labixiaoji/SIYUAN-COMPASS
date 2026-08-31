@@ -45,6 +45,10 @@ services:
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-siyuan}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-siyuan_compass}
       FRONTEND_ORIGINS: ${FRONTEND_ORIGINS:-http://localhost:5173}
+      LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-600}
+      LLM_MAX_CONCURRENCY: ${LLM_MAX_CONCURRENCY:-3}
+      LLM_MAX_RETRIES: ${LLM_MAX_RETRIES:-2}
+      GENERATION_WORKER_COUNT: ${GENERATION_WORKER_COUNT:-3}
       WATCHFILES_FORCE_POLLING: "true"
     volumes:
       - ./backend/app:/app/backend/app

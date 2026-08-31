@@ -41,6 +41,12 @@ class PostgresStorageSchemaTest(unittest.TestCase):
         self.assertIn("save_generation_job_if_user_idle", STORAGE_SOURCE)
         self.assertIn("FOR UPDATE", STORAGE_SOURCE)
 
+    def test_generation_queue_claims_fifo_with_skip_locked(self):
+        self.assertIn("claim_next_generation_job", STORAGE_SOURCE)
+        self.assertIn("ORDER BY created_at, job_id", STORAGE_SOURCE)
+        self.assertIn("FOR UPDATE SKIP LOCKED", STORAGE_SOURCE)
+        self.assertIn("idx_generation_jobs_queue_created_at", STORAGE_SOURCE)
+
     def test_daily_quota_counter_survives_business_data_deletion(self):
         self.assertIn("generation_quota_day", STORAGE_SOURCE)
         self.assertIn("generation_quota_used", STORAGE_SOURCE)

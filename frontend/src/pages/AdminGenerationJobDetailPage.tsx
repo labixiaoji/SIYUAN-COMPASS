@@ -89,6 +89,9 @@ export function AdminGenerationJobDetailPage() {
           <div><span>当前阶段</span><strong>{stageText(job.stage)}</strong></div>
           <div><span>处理进度</span><strong>{job.progress}%</strong></div>
           <div><span>尝试次数</span><strong>{job.attempts ?? 0}</strong></div>
+          <div><span>Worker 尝试</span><strong>{job.workerAttempts ?? 0}</strong></div>
+          <div><span>模型请求 / 重试</span><strong>{job.llmRequestAttempts ?? 0} / {job.llmRetryCount ?? 0}</strong></div>
+          <div><span>质量修复</span><strong>{job.qualityRepairCount ?? 0}</strong></div>
           <div><span>最近更新</span><strong>{formatTime(job.updatedAt)}</strong></div>
         </div>
         <p className="admin-detail-message">{job.message}</p>
@@ -117,6 +120,12 @@ export function AdminGenerationJobDetailPage() {
             <span>错误说明</span>
             <p>{failure.message}</p>
           </div>
+          {failure.missingFields && failure.missingFields.length > 0 && (
+            <div className="admin-error-message">
+              <span>缺少字段</span>
+              <p>{failure.missingFields.join("、")}</p>
+            </div>
+          )}
         </section>
       )}
 

@@ -5,7 +5,7 @@ import sys
 from types import ModuleType
 from types import SimpleNamespace
 from unittest import IsolatedAsyncioTestCase, TestCase
-from unittest.mock import AsyncMock, Mock, call, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 try:
     import psycopg  # noqa: F401
@@ -25,7 +25,9 @@ except ModuleNotFoundError:
 from app.schemas.assessment import AssessmentResponseInput
 from app.schemas.generation_job import GenerationJobStatus
 from app.services import generation_jobs
+from app.services.assessment_validator import REQUIRED_STRING_FIELDS
 from app.storage.json_db import GenerationQuotaStorageError
+from app.storage import json_db
 
 
 def make_job(status: str = "queued") -> GenerationJobStatus:
@@ -39,6 +41,31 @@ def make_job(status: str = "queued") -> GenerationJobStatus:
         createdAt="2026-07-30T00:00:00+00:00",
         updatedAt="2026-07-30T00:00:00+00:00",
     )
+
+
+def make_complete_raw_input() -> dict[str, object]:
+    raw: dict[str, object] = {field: "已填写" for field in REQUIRED_STRING_FIELDS}
+    raw.update(
+        {
+            "educationStage": "本科",
+            "grade": "大三",
+            "mastersIntention": "就业",
+            "phdIntention": "",
+            "educationPathReasons": ["个人兴趣"],
+            "topValuesRanked": ["成长", "稳定", "自主"],
+            "abilityScores": {"logic": 4, "expression": 3, "spatialDesign": 3, "interpersonal": 3},
+            "interestScores": {"handsOn": 4, "research": 4, "creation": 3, "helping": 3, "leadership": 2, "detail": 4},
+            "praisedTraits": ["认真"],
+            "preferredWorkStyle": ["独立完成"],
+            "currentPreparations": ["课程学习"],
+            "missingResources": ["岗位信息"],
+            "jobInfoChannels": ["学校就业平台"],
+            "careerConfusions": ["不知道未来适合做什么"],
+            "longTermPersistence": 3,
+            "userId": "attacker-id",
+        }
+    )
+    return raw
 
 
 class GenerationJobReservationTest(TestCase):
@@ -64,6 +91,23 @@ class GenerationJobReservationTest(TestCase):
 
     @patch.object(generation_jobs, "get_settings")
     @patch.object(generation_jobs, "save_generation_job_if_user_idle")
+    def test_create_does_not_persist_omitted_default_answers(self, save_job, settings):
+        settings.return_value = SimpleNamespace(
+            report_generation_daily_limit=0,
+            report_generation_quota_timezone="Asia/Shanghai",
+            generation_job_retention_days=30,
+        )
+        save_job.return_value = None
+        input_data = AssessmentResponseInput.model_construct(userId="user-1")
+
+        generation_jobs.create_generation_job("user-1", input_data)
+
+        persisted = save_job.call_args.kwargs["input_data"]
+        self.assertNotIn("preferredWorkStyle", persisted)
+        self.assertNotIn("longTermPersistence", persisted)
+
+    @patch.object(generation_jobs, "get_settings")
+    @patch.object(generation_jobs, "save_generation_job_if_user_idle")
     def test_quota_error_is_exposed_as_service_error(self, save_job, settings):
         settings.return_value = SimpleNamespace(
             report_generation_daily_limit=3,
@@ -85,23 +129,16 @@ class GenerationJobReservationTest(TestCase):
 class GenerationJobRecoveryTest(IsolatedAsyncioTestCase):
     @patch.object(generation_jobs, "get_settings")
     @patch.object(generation_jobs, "delete_expired_generation_jobs")
-    @patch.object(generation_jobs, "list_recoverable_generation_job_ids")
-    @patch.object(generation_jobs, "start_generation_job")
-    def test_startup_recovers_all_durable_jobs(self, start, list_jobs, delete_old, settings):
+    @patch.object(generation_jobs, "start_generation_workers")
+    def test_startup_starts_fixed_worker_pool(self, start_workers, delete_old, settings):
         settings.return_value = SimpleNamespace(generation_job_retention_days=30)
-        list_jobs.return_value = ["queued-job", "running-job"]
+        start_workers.return_value = 3
 
         count = generation_jobs.recover_generation_jobs()
 
-        self.assertEqual(count, 2)
+        self.assertEqual(count, 3)
         delete_old.assert_called_once_with(30)
-        self.assertEqual(
-            start.call_args_list,
-            [
-                call("queued-job"),
-                call("running-job"),
-            ],
-        )
+        start_workers.assert_called_once_with()
 
     @patch.object(generation_jobs.asyncio, "sleep", new_callable=AsyncMock)
     @patch.object(generation_jobs, "generation_job_retry_delay")
@@ -126,6 +163,92 @@ class GenerationJobRecoveryTest(IsolatedAsyncioTestCase):
         self.assertEqual(recovered.jobId, "job-1")
         self.assertEqual(claim.call_count, 2)
         sleep.assert_awaited_once()
+
+    @patch.object(generation_jobs, "analyze_career_profile", new_callable=AsyncMock)
+    @patch.object(generation_jobs, "find_user", return_value={"id": "user-1"})
+    @patch.object(generation_jobs, "load_generation_job_input", return_value={"educationStage": "本科"})
+    @patch.object(generation_jobs, "_update_running_job", return_value=make_job("failed"))
+    @patch.object(generation_jobs, "_heartbeat", new_callable=AsyncMock)
+    @patch.object(generation_jobs, "_claim_when_available", new_callable=AsyncMock)
+    async def test_incomplete_snapshot_fails_without_calling_model(
+        self,
+        claim,
+        _heartbeat,
+        update_job,
+        _load_input,
+        _find_user,
+        analyze_profile,
+    ):
+        claim.return_value = make_job("running")
+
+        await generation_jobs.run_generation_job("job-1")
+
+        analyze_profile.assert_not_awaited()
+        self.assertEqual(update_job.call_args.kwargs["stage"], "validation_failed")
+        failure = update_job.call_args.kwargs["failure"]
+        self.assertEqual(failure["code"], "ASSESSMENT_INCOMPLETE")
+        self.assertIn("grade", failure["missingFields"])
+
+
+class GenerationWorkerLifecycleTest(IsolatedAsyncioTestCase):
+    async def test_worker_pool_has_configured_fixed_size(self):
+        async def idle_worker(_worker_id, stop_event):
+            await stop_event.wait()
+
+        with (
+            patch.object(generation_jobs, "get_settings", return_value=SimpleNamespace(generation_worker_count=3)),
+            patch.object(generation_jobs, "_generation_worker_loop", new=idle_worker),
+        ):
+            self.assertEqual(generation_jobs.start_generation_workers(), 3)
+            self.assertEqual(len(generation_jobs.WORKER_TASKS), 3)
+            await generation_jobs.stop_generation_workers()
+
+        self.assertEqual(generation_jobs.WORKER_TASKS, {})
+        self.assertEqual(generation_jobs.WORKER_CLAIMS, {})
+
+
+class GenerationJobOwnershipTest(IsolatedAsyncioTestCase):
+    def test_relational_user_id_overrides_recovery_json(self):
+        record = json_db._generation_job_from_row(
+            {
+                "data": {
+                    "jobId": "job-1",
+                    "userId": "attacker-id",
+                    "status": "queued",
+                    "stage": "queued",
+                    "progress": 5,
+                    "message": "test",
+                },
+                "user_id": "owner-id",
+                "created_at": "2026-07-30T00:00:00+00:00",
+                "updated_at": "2026-07-30T00:00:00+00:00",
+                "draft_available": True,
+            }
+        )
+
+        self.assertIsNotNone(record)
+        self.assertEqual(record.userId, "owner-id")
+
+    def test_unowned_legacy_job_cannot_fall_back_to_json_user_id(self):
+        record = json_db._generation_job_from_row(
+            {
+                "data": {
+                    "jobId": "job-2",
+                    "userId": "attacker-id",
+                    "status": "queued",
+                    "stage": "queued",
+                    "progress": 5,
+                    "message": "test",
+                },
+                "user_id": None,
+                "created_at": "2026-07-30T00:00:00+00:00",
+                "updated_at": "2026-07-30T00:00:00+00:00",
+                "draft_available": True,
+            }
+        )
+
+        self.assertIsNotNone(record)
+        self.assertIsNone(record.userId)
 
     @patch.object(generation_jobs, "save_report")
     @patch.object(generation_jobs, "_update_running_job")

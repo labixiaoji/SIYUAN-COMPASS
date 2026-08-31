@@ -80,6 +80,7 @@ const generationSteps = [
   { progress: 45, label: "校验画像" },
   { progress: 65, label: "生成生涯报告" },
   { progress: 88, label: "校验报告" },
+  { progress: 95, label: "保存结果" },
   { progress: 100, label: "完成" }
 ];
 const initialForm: AssessmentResponseInput = {
@@ -295,6 +296,7 @@ const requiredFields: Array<{
   { key: "jobInfoChannels", step: 5, message: "请至少选择1个职业或招聘信息渠道", validate: (form) => form.jobInfoChannels.length > 0 },
   { key: "jobInfoChannelOther", step: 5, message: "请填写其他职业信息渠道", validate: (form) => !form.jobInfoChannels.includes("其他") || hasText(form.jobInfoChannelOther) },
   { key: "healthEnergyStatus", step: 5, message: "请选择身体健康和精力状态" },
+  { key: "longTermPersistence", step: 5, message: "请完成长期坚持度评分", validate: (form) => Number.isFinite(form.longTermPersistence) && form.longTermPersistence >= 1 && form.longTermPersistence <= 5 },
   { key: "executionStyle", step: 5, message: "请选择执行力自评" },
   { key: "failureRecoveryTime", step: 5, message: "请选择失败后的恢复速度" },
   { key: "selfDoubtFrequency", step: 5, message: "请选择自我怀疑情况" },
@@ -319,6 +321,22 @@ function validateForm(form: AssessmentResponseInput): FieldErrors {
     const valid = field.validate ? field.validate(form) : hasText(form[field.key]);
     if (!valid) {
       errors[field.key] = field.message;
+    }
+    return errors;
+  }, {});
+}
+
+function fieldErrorsFromServer(fields: string[]): FieldErrors {
+  const fallbackMessages: Record<string, string> = {
+    abilityScores: "请完成能力评分",
+    interestScores: "请完成兴趣评分"
+  };
+  return fields.reduce<FieldErrors>((errors, name) => {
+    const field = requiredFields.find((item) => item.key === name);
+    if (field) {
+      errors[field.key] = field.message;
+    } else if (fallbackMessages[name]) {
+      errors[name as FieldKey] = fallbackMessages[name];
     }
     return errors;
   }, {});
@@ -358,6 +376,10 @@ function jobStatusLabel(job: GenerationJobStatus) {
   if (job.status === "failed") return "生成失败";
   if (job.status === "cancelled") return "已取消生成";
   if (job.status === "success") return "生成成功";
+  if (job.status === "queued") return `任务正在排队，系统最多同时生成${job.maxConcurrentReports ?? 3}份报告`;
+  if (job.stage === "preparing") return "正在整理问卷";
+  if (job.stage === "saving") return "正在保存报告";
+  if (job.stage === "profile_complete") return "画像已完成，正在准备报告";
   if (job.stage.includes("report")) return "正在生成报告";
   if (job.stage.includes("profile")) return "正在生成画像";
   return "问卷已提交";
@@ -426,6 +448,7 @@ export function AssessmentPage() {
   const [draftSavedAt, setDraftSavedAt] = useState<string | null>(null);
   const [recoveryNotice, setRecoveryNotice] = useState("");
   const draftVersionRef = useRef(0);
+  const draftConflictRef = useRef(false);
   const draftRequestRef = useRef<AbortController | null>(null);
   const draftSaveTimerRef = useRef<number | null>(null);
   const draftSaveControllerRef = useRef<AbortController | null>(null);
@@ -509,6 +532,7 @@ export function AssessmentPage() {
     const saved = readAssessmentDraft<AssessmentPrefill>(user.id);
     const controller = new AbortController();
     draftRequestRef.current = controller;
+    draftConflictRef.current = false;
     setDraftSync("loading");
     fetchAssessmentDraft(controller.signal).then(({ draft }) => {
       if (!mountedRef.current || controller.signal.aborted) return;
@@ -547,7 +571,7 @@ export function AssessmentPage() {
   }, [recoverJobId, user?.id]);
 
   useEffect(() => {
-    if (!user || draftOwnerId !== user.id || !draftReady || !draftDirty || submitting || cloudDraftPrompt) return;
+    if (!user || draftOwnerId !== user.id || !draftReady || !draftDirty || submitting || cloudDraftPrompt || draftConflictRef.current) return;
     saveAssessmentDraft(user.id, form);
     setDraftSync("saving");
     if (draftSaveTimerRef.current !== null) window.clearTimeout(draftSaveTimerRef.current);
@@ -566,7 +590,9 @@ export function AssessmentPage() {
         if (draftSaveControllerRef.current === controller) draftSaveControllerRef.current = null;
       }).catch((caught) => {
         if (!mountedRef.current || controller.signal.aborted || isAbortError(caught)) return;
-        setDraftSync(caught instanceof Error && "status" in caught && caught.status === 409 ? "conflict" : "offline");
+        const isConflict = caught instanceof Error && "status" in caught && caught.status === 409;
+        if (isConflict) draftConflictRef.current = true;
+        setDraftSync(isConflict ? "conflict" : "offline");
         if (draftSaveControllerRef.current === controller) draftSaveControllerRef.current = null;
       });
     }, 900);
@@ -638,10 +664,15 @@ export function AssessmentPage() {
         status: "queued",
         stage: "queued",
         progress: 5,
-        message: "问卷已接收，等待开始分析。"
+        message: "问卷已接收，等待开始分析。",
+        maxConcurrentReports: created.maxConcurrentReports ?? 3
       });
 
-      for (let attempt = 0; attempt < 600; attempt += 1) {
+      // A queued task may contain two long model stages, each with transient
+      // retries. Keep polling longer than the single-request timeout so the
+      // page does not report a false failure while the durable worker is still
+      // making progress.
+      for (let attempt = 0; attempt < 3600; attempt += 1) {
         const job = await fetchAssessmentJob(created.jobId, controller.signal);
         if (!mountedRef.current) return;
         setGenerationJob(job);
@@ -656,6 +687,13 @@ export function AssessmentPage() {
         }
 
         if (job.status === "failed") {
+          if (job.missingFields?.length) {
+            const serverErrors = fieldErrorsFromServer(job.missingFields);
+            if (Object.keys(serverErrors).length > 0) {
+              markErrors(serverErrors);
+              return;
+            }
+          }
           throw new Error(job.error ? `${job.message} ${job.error}` : job.message);
         }
 
@@ -666,7 +704,7 @@ export function AssessmentPage() {
         await waitForNextPoll(controller.signal);
       }
 
-      throw new Error("生成等待时间超过10分钟，请检查后端日志或稍后重试。");
+      throw new Error("生成等待时间超过60分钟，请检查后台任务状态或稍后重试。");
     } catch (caught) {
       if (controller.signal.aborted || isAbortError(caught)) return;
       if (hasFieldErrors(caught)) {
@@ -721,6 +759,7 @@ export function AssessmentPage() {
     draftSaveControllerRef.current?.abort();
     draftSaveControllerRef.current = null;
     setCloudDraftPrompt(null);
+    draftConflictRef.current = false;
     setDraftDirty(false);
     setDraftSync("idle");
     setDraftSavedAt(null);

@@ -2,12 +2,17 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
-from typing import Callable
+from typing import Any, Callable
 from uuid import uuid4
 
 from pydantic import ValidationError
 
-from app.llm.provider import create_chat_completion, get_llm_configuration_error, is_llm_configured
+from app.llm.provider import (
+    LLMCallStats,
+    create_chat_completion,
+    get_llm_configuration_error,
+    is_llm_configured,
+)
 from app.schemas.assessment import AssessmentResponse
 from app.schemas.profile import CareerProfile, ProfileAnalysisResult
 from app.services.profile_prompt import (
@@ -104,6 +109,7 @@ ProgressCallback = Callable[[str, int, str], None]
 async def analyze_career_profile(
     response: AssessmentResponse,
     progress_callback: ProgressCallback | None = None,
+    llm_stats: LLMCallStats | None = None,
 ) -> CareerProfile:
     if not is_llm_configured():
         raise ProfileAnalysisError(get_llm_configuration_error())
@@ -113,6 +119,8 @@ async def analyze_career_profile(
     retry_reason: str | None = None
 
     for attempt in range(2):
+        if attempt > 0 and llm_stats is not None:
+            llm_stats.quality_repair_count += 1
         if progress_callback:
             if attempt == 0:
                 progress_callback("profile_generating", 20, "正在根据每道题的用途和交叉规则生成结构化用户画像。")
@@ -123,12 +131,19 @@ async def analyze_career_profile(
                     f"画像结构未通过校验，正在自动修正：{retry_reason or '未知原因'}",
                 )
         try:
+            call_kwargs: dict[str, Any] = {
+                "temperature": 0.1,
+                "max_tokens": 10000,
+                "json_mode": True,
+            }
+            if llm_stats is not None:
+                call_kwargs["stats"] = llm_stats
             result = await create_chat_completion(
                 build_profile_messages(response, retry_reason),
-                temperature=0.1,
-                max_tokens=10000,
-                json_mode=True,
+                **call_kwargs,
             )
+            if attempt > 0 and llm_stats is not None:
+                llm_stats.last_attempt_kind = "quality_repair"
         except Exception as error:
             raise ProfileAnalysisError(f"用户画像生成失败：{error}") from error
 

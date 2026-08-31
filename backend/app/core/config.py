@@ -3,6 +3,7 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ROOT_ENV_FILE = Path(__file__).resolve().parents[3] / ".env"
@@ -16,7 +17,11 @@ class Settings(BaseSettings):
     deepseek_api_key: str | None = None
     deepseek_base_url: str = "https://api.deepseek.com"
     deepseek_model: str = "deepseek-chat"
-    llm_timeout_seconds: float = 180
+    # Model calls can contain long structured reports; keep the timeout explicit
+    # and configurable rather than relying on the HTTP client's short default.
+    llm_timeout_seconds: float = Field(default=600, gt=0)
+    llm_max_concurrency: int = Field(default=3, ge=1)
+    llm_max_retries: int = Field(default=2, ge=0)
     speech_provider: str = "disabled"
     speech_xfyun_app_id: str | None = None
     speech_xfyun_api_key: str | None = None
@@ -43,6 +48,7 @@ class Settings(BaseSettings):
     admin_username: str = "admin"
     admin_password: str = "admin12345"
     admin_display_name: str = "系统管理员"
+    generation_worker_count: int = Field(default=3, ge=1)
     database_url: str = "postgresql://siyuan:siyuan_password@localhost:5432/siyuan_compass"
 
     model_config = SettingsConfigDict(env_file=ROOT_ENV_FILE, env_file_encoding="utf-8", extra="ignore")

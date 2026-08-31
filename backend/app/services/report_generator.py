@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Callable
+from typing import Any, Callable
 from uuid import uuid4
 
-from app.llm.provider import create_chat_completion, get_llm_configuration_error, is_llm_configured
+from app.llm.provider import (
+    LLMCallStats,
+    create_chat_completion,
+    get_llm_configuration_error,
+    is_llm_configured,
+)
 from app.schemas.assessment import AssessmentResponse
 from app.schemas.profile import CareerProfile
 from app.schemas.report import CareerBlueprintReport
@@ -30,6 +35,7 @@ async def generate_report(
     response: AssessmentResponse,
     profile: CareerProfile,
     progress_callback: ProgressCallback | None = None,
+    llm_stats: LLMCallStats | None = None,
 ) -> CareerBlueprintReport:
     if not is_llm_configured():
         raise ReportGenerationError(get_llm_configuration_error())
@@ -40,13 +46,20 @@ async def generate_report(
     quality = None
     retry_count = 0
     for attempt in range(2):
+        if attempt > 0 and llm_stats is not None:
+            llm_stats.quality_repair_count += 1
         if progress_callback:
             if attempt == 0:
                 progress_callback("report_generating", 65, "正在基于原始问卷和结构化画像生成六模块三路径报告。")
             else:
                 progress_callback("report_retrying", 82, "报告质量门禁未通过，正在自动修复结构、证据和行动建议。")
         try:
-            result = await create_chat_completion(messages, max_tokens=10000)
+            call_kwargs: dict[str, Any] = {"max_tokens": 10000}
+            if llm_stats is not None:
+                call_kwargs["stats"] = llm_stats
+            result = await create_chat_completion(messages, **call_kwargs)
+            if attempt > 0 and llm_stats is not None:
+                llm_stats.last_attempt_kind = "quality_repair"
         except Exception as error:
             raise ReportGenerationError(f"大模型调用失败：{error}") from error
 

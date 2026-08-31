@@ -64,6 +64,7 @@ export function AdminPage() {
 
   const failedCount = metrics.generationFailedCount ?? metrics.reportFailedCount;
   const runningCount = metrics.generationRunningCount ?? 0;
+  const queuedCount = metrics.generationQueuedCount ?? 0;
 
   return (
     <main className="shell page admin-overview-page">
@@ -92,6 +93,11 @@ export function AdminPage() {
           <strong>{runningCount}</strong>
           <span>生成中任务</span>
           <small>查看当前处理进度</small>
+        </Link>
+        <Link className="panel stat admin-metric-link" to="/admin/generation-jobs?status=queued">
+          <strong>{queuedCount}</strong>
+          <span>排队中任务</span>
+          <small>等待 Worker 领取</small>
         </Link>
       </section>
 

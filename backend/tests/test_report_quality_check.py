@@ -1,6 +1,6 @@
 import unittest
 
-from app.services.report_quality_check import check_report_quality
+from app.services.report_quality_check import check_report_quality, extract_action_items
 
 
 def make_report(extra_body: str = "", include_plan_c: bool = True) -> str:
@@ -97,6 +97,32 @@ class ReportQualityCheckTest(unittest.TestCase):
 
         self.assertEqual(quality["status"], "failed")
         self.assertIn("报告包含疑似联系方式或长数字标识", quality["fatalWarnings"])
+
+    def test_action_numbering_variants_are_recognized(self):
+        for marker in (
+            "1. 完成岗位访谈",
+            "1、完成岗位访谈",
+            "（1）完成岗位访谈",
+            "(1) 完成岗位访谈",
+            "**1.** 完成岗位访谈",
+            "行动一：完成岗位访谈",
+        ):
+            content = "\n".join(
+                [
+                    marker,
+                    marker.replace("1", "2", 1).replace("一", "二", 1),
+                    marker.replace("1", "3", 1).replace("一", "三", 1),
+                ]
+            )
+            self.assertEqual(len(extract_action_items(content)), 3, marker)
+
+    def test_action_count_is_a_warning_not_a_fatal_failure(self):
+        content = make_report().replace("3. 更新路径决策表", "行动三：更新路径决策表")
+        content = content.replace("2. 完成一个小型项目", "（2）完成一个小型项目")
+
+        quality = check_report_quality(content)
+
+        self.assertNotIn("行动项格式或数量异常", quality["fatalWarnings"])
 
 
 if __name__ == "__main__":

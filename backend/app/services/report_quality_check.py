@@ -46,10 +46,25 @@ SECTION_MIN_LENGTHS = {
 }
 MIN_REPORT_LENGTH = 1200
 PLAN_TITLES = ("Plan A", "Plan B", "Plan C")
+_ACTION_ITEM_PATTERNS = (
+    re.compile(r"^\s*(?:\*\*)?\s*\d+\s*[.、](?:\*\*)?\s*"),
+    re.compile(r"^\s*(?:\*\*)?\s*[（(]\s*\d+\s*[）)](?:\*\*)?\s*"),
+    re.compile(r"^\s*行动[一二三四五六七八九十百千万]+(?:\s*[：:、.]\s*|\s+|$)"),
+)
 
 
 def count_chineseish_words(content: str) -> int:
     return len("".join(content.split()))
+
+
+def extract_action_items(content: str) -> list[str]:
+    """Recognize common list formats without making formatting a hard failure."""
+
+    return [
+        line.strip()
+        for line in content.splitlines()
+        if any(pattern.match(line) for pattern in _ACTION_ITEM_PATTERNS)
+    ]
 
 
 def _section_lengths(content: str) -> dict[str, int]:
@@ -188,9 +203,9 @@ def check_report_quality(
     action_section_end = content.find("五、半年后我会问你这些问题")
     if action_section_start >= 0 and action_section_end > action_section_start:
         action_section = content[action_section_start:action_section_end]
-        action_count = len(re.findall(r"(?m)^\s*\d+[.、]\s+", action_section))
+        action_count = len(extract_action_items(action_section))
         if not 3 <= action_count <= 5:
-            warnings.append(f"行动项数量不符合3—5项要求：{action_count}")
+            warnings.append(f"行动项格式或数量异常（建议3—5项）：{action_count}")
 
     if prohibited_personal_values:
         leaked = [
@@ -215,7 +230,6 @@ def check_report_quality(
             "路径内容过少",
             "路径缺少验证行动或切换条件",
             "路径内容高度重复",
-            "行动项数量不符合",
             "报告包含不应展示的个人身份信息",
             "报告包含疑似联系方式或长数字标识",
         ]

@@ -16,8 +16,8 @@ from app.services.generation_jobs import (
     cancel_generation_job,
     create_generation_job,
     get_generation_job,
-    run_generation_job,
     start_generation_job,
+    wait_for_generation_job,
 )
 from app.storage.json_db import (
     AssessmentDraftConflictError,
@@ -112,7 +112,11 @@ async def create_assessment_job(
     authenticated_input = input_data.model_copy(update={"userId": user["id"]})
     job = _reserve_job(user["id"], authenticated_input)
     start_generation_job(job.jobId)
-    return GenerationJobCreated(jobId=job.jobId, status="queued")
+    return GenerationJobCreated(
+        jobId=job.jobId,
+        status="queued",
+        maxConcurrentReports=job.maxConcurrentReports,
+    )
 
 
 @router.get("/assessment-jobs/{job_id}", response_model=GenerationJobStatus)
@@ -176,8 +180,8 @@ async def submit_assessment(
 
     authenticated_input = input_data.model_copy(update={"userId": user["id"]})
     job = _reserve_job(user["id"], authenticated_input)
-    await run_generation_job(job.jobId)
-    completed = get_generation_job(job.jobId)
+    start_generation_job(job.jobId)
+    completed = await wait_for_generation_job(job.jobId)
     if not completed:
         raise HTTPException(status_code=500, detail={"error": "生成任务状态丢失"})
     if completed.status != "success":
@@ -188,6 +192,7 @@ async def submit_assessment(
                 "stage": completed.stage,
                 "error": completed.error or completed.message,
                 "jobId": completed.jobId,
+                "missingFields": completed.missingFields,
             },
         )
     if not completed.responseId or not completed.profileId or not completed.reportId:

@@ -37,8 +37,10 @@ export type AdminMetrics = {
   lowScoreReports: string[];
   recentReports: CareerBlueprintReport[];
   generationFailedCount?: number;
+  generationSuccessCount?: number;
   generationRunningCount?: number;
   generationQueuedCount?: number;
+  generationCancelledCount?: number;
 };
 
 export type ReportFeedbackRecord = {

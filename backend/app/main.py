@@ -16,7 +16,7 @@ from app.api.privacy import router as privacy_router
 from app.api.reports import router as reports_router
 from app.api.speech import router as speech_router
 from app.core.config import get_settings
-from app.services.generation_jobs import recover_generation_jobs
+from app.services.generation_jobs import recover_generation_jobs, stop_generation_workers
 from app.storage.json_db import (
     clear_expired_generation_quota_counters,
     clear_expired_speech_quota_counters,
@@ -84,12 +84,14 @@ async def startup() -> None:
     ensure_storage()
     ensure_admin_account()
     run_data_maintenance()
-    recover_generation_jobs()
+    worker_count = recover_generation_jobs()
+    logger.info("generation worker pool started: workers=%s", worker_count)
     DATA_MAINTENANCE_TASK = asyncio.create_task(_run_daily_data_maintenance())
 
 
 async def shutdown() -> None:
     global DATA_MAINTENANCE_TASK
+    await stop_generation_workers()
     if DATA_MAINTENANCE_TASK:
         DATA_MAINTENANCE_TASK.cancel()
         with suppress(asyncio.CancelledError):

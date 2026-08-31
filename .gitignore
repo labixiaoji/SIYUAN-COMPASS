@@ -40,6 +40,7 @@ skills-lock.json
 # 外部规范与本地开发待办，不纳入版本库
 docs/交我办移动端设计规范.pdf
 docs/TODO.md
+docs/siyuan-compass-architecture*
 
 # 本地 Docker 镜像包
 siyuan-compass-images-*.tar.gz
