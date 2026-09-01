@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     llm_timeout_seconds: float = Field(default=600, gt=0)
     llm_max_concurrency: int = Field(default=3, ge=1)
     llm_max_retries: int = Field(default=2, ge=0)
+    # Maximum number of output tokens requested from the selected provider.
+    # This is not the provider model's total context-window size.
+    llm_max_output_tokens: int = Field(default=10000, ge=1)
     frontend_origins: str = "http://localhost:5173"
     auth_secret: str = "change-this-secret-before-production"
     auth_token_hours: int = 72

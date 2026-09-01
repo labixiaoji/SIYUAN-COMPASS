@@ -7,7 +7,7 @@ from app.llm import provider
 from app.llm.errors import LLMProviderError, error_kind_for_status
 
 
-def settings(selected_provider: str = "kimi") -> SimpleNamespace:
+def settings(selected_provider: str = "kimi", max_output_tokens: int = 10000) -> SimpleNamespace:
     return SimpleNamespace(
         llm_provider=selected_provider,
         kimi_api_key="kimi-key",
@@ -18,6 +18,7 @@ def settings(selected_provider: str = "kimi") -> SimpleNamespace:
         deepseek_model="deepseek-chat",
         llm_max_concurrency=3,
         llm_max_retries=2,
+        llm_max_output_tokens=max_output_tokens,
     )
 
 
@@ -78,6 +79,22 @@ class LlmProviderTest(unittest.TestCase):
             [{"role": "user", "content": "hello"}],
             temperature=0.4,
             max_tokens=10000,
+            json_mode=False,
+        )
+
+    def test_output_token_limit_defaults_to_environment_setting(self) -> None:
+        deepseek_call = AsyncMock(return_value={"content": "ok"})
+        with (
+            patch.object(provider, "get_settings", return_value=settings("deepseek", 2048)),
+            patch.object(provider, "create_deepseek_chat_completion", deepseek_call),
+        ):
+            result = asyncio.run(provider.create_chat_completion([{"role": "user", "content": "hello"}]))
+
+        self.assertEqual(result, {"content": "ok"})
+        deepseek_call.assert_awaited_once_with(
+            [{"role": "user", "content": "hello"}],
+            temperature=0.4,
+            max_tokens=2048,
             json_mode=False,
         )
 

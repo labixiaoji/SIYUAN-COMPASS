@@ -54,7 +54,7 @@ async def generate_report(
             else:
                 progress_callback("report_retrying", 82, "报告质量门禁未通过，正在自动修复结构、证据和行动建议。")
         try:
-            call_kwargs: dict[str, Any] = {"max_tokens": 10000}
+            call_kwargs: dict[str, Any] = {}
             if llm_stats is not None:
                 call_kwargs["stats"] = llm_stats
             result = await create_chat_completion(messages, **call_kwargs)

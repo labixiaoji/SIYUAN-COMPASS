@@ -133,7 +133,6 @@ async def analyze_career_profile(
         try:
             call_kwargs: dict[str, Any] = {
                 "temperature": 0.1,
-                "max_tokens": 10000,
                 "json_mode": True,
             }
             if llm_stats is not None:

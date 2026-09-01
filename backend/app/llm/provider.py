@@ -94,7 +94,7 @@ async def create_chat_completion(
     messages: list[dict[str, str]],
     *,
     temperature: float = 0.4,
-    max_tokens: int = 10000,
+    max_tokens: int | None = None,
     json_mode: bool = False,
     stats: LLMCallStats | None = None,
 ) -> dict[str, Any]:
@@ -103,6 +103,14 @@ async def create_chat_completion(
     provider = get_llm_provider()
     settings = get_settings()
     max_retries = max(int(getattr(settings, "llm_max_retries", 2)), 0)
+    output_token_limit = max(
+        int(
+            getattr(settings, "llm_max_output_tokens", 10000)
+            if max_tokens is None
+            else max_tokens
+        ),
+        1,
+    )
 
     for attempt in range(max_retries + 1):
         if stats is not None:
@@ -116,12 +124,12 @@ async def create_chat_completion(
                     return await create_deepseek_chat_completion(
                         messages,
                         temperature=temperature,
-                        max_tokens=max_tokens,
+                        max_tokens=output_token_limit,
                         json_mode=json_mode,
                     )
                 return await create_kimi_chat_completion(
                     messages,
-                    max_tokens=max_tokens,
+                    max_tokens=output_token_limit,
                     json_mode=json_mode,
                 )
         except LLMProviderError as error:
