@@ -527,7 +527,6 @@ class AdminAuditTest(TestCase):
 
 class MaintenanceLifecycleTest(TestCase):
     @patch.object(main, "delete_expired_assessment_drafts", return_value=7)
-    @patch.object(main, "clear_expired_speech_quota_counters", return_value=6)
     @patch.object(main, "clear_expired_generation_quota_counters", return_value=5)
     @patch.object(main, "purge_non_persisted_assessment_fields", return_value=4)
     @patch.object(main, "purge_stored_raw_model_outputs", return_value=3)
@@ -540,7 +539,6 @@ class MaintenanceLifecycleTest(TestCase):
         raw_outputs,
         assessment_fields,
         quota_counters,
-        speech_quota_counters,
         assessment_drafts,
     ):
         result = main.run_data_maintenance()
@@ -553,7 +551,6 @@ class MaintenanceLifecycleTest(TestCase):
         raw_outputs.assert_called_once_with()
         assessment_fields.assert_called_once_with()
         quota_counters.assert_called_once()
-        speech_quota_counters.assert_called_once()
         self.assertEqual(
             result,
             {
@@ -563,7 +560,6 @@ class MaintenanceLifecycleTest(TestCase):
                 "rawModelOutputs": 3,
                 "nonPersistedAssessmentFields": 4,
                 "generationQuotaCounters": 5,
-                "speechQuotaCounters": 6,
             },
         )
 

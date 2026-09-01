@@ -22,19 +22,6 @@ class Settings(BaseSettings):
     llm_timeout_seconds: float = Field(default=600, gt=0)
     llm_max_concurrency: int = Field(default=3, ge=1)
     llm_max_retries: int = Field(default=2, ge=0)
-    speech_provider: str = "disabled"
-    speech_xfyun_app_id: str | None = None
-    speech_xfyun_api_key: str | None = None
-    speech_xfyun_api_secret: str | None = None
-    speech_xfyun_base_url: str = "https://office-api-ist-dx.iflyaisol.com"
-    speech_xfyun_language: str = "autodialect"
-    speech_xfyun_domain: str = "edu"
-    speech_xfyun_poll_interval_seconds: float = 1.5
-    speech_xfyun_poll_timeout_seconds: float = 120
-    speech_timeout_seconds: float = 30
-    speech_max_file_mb: int = 10
-    speech_daily_limit: int = 0
-    speech_quota_timezone: str = "Asia/Shanghai"
     frontend_origins: str = "http://localhost:5173"
     auth_secret: str = "change-this-secret-before-production"
     auth_token_hours: int = 72
