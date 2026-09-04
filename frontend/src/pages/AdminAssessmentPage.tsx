@@ -211,7 +211,7 @@ export function AdminAssessmentPage() {
       <AdminAssessmentReader assessment={assessment} />
 
       <div className="actions">
-        <Link className="button secondary" to="/admin">返回后台</Link>
+        <Link className="button secondary" to="/admin/assessments">返回填写记录</Link>
       </div>
     </main>
   );

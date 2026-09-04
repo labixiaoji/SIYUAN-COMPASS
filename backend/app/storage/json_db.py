@@ -989,11 +989,18 @@ def update_report(report: CareerBlueprintReport) -> None:
     record = _report_storage_record(report)
     with _connect() as connection:
         previous = connection.execute(
-            "SELECT title FROM reports WHERE id = %s",
+            "SELECT title, data FROM reports WHERE id = %s",
             (report.id,),
         ).fetchone()
         if not previous:
             return
+
+        previous_data = dict(previous["data"] or {})
+        changed_fields: list[str] = []
+        if (previous["title"] or "") != report.title:
+            changed_fields.append("title")
+        if previous_data.get("content", "") != report.content:
+            changed_fields.append("content")
 
         connection.execute(
             """
@@ -1021,7 +1028,7 @@ def update_report(report: CareerBlueprintReport) -> None:
         source = "admin_edit" if report.editedBy else "ai_regenerated"
         _save_report_version(connection, report, source)
 
-        if report.editedBy:
+        if report.editedBy and changed_fields:
             _insert_admin_audit(
                 connection,
                 admin_id=report.editedBy,
@@ -1030,8 +1037,9 @@ def update_report(report: CareerBlueprintReport) -> None:
                 target_id=report.id,
                 created_at=report.updatedAt,
                 details={
-                    "changedFields": ["title", "content"],
+                    "changedFields": changed_fields,
                     "qualityStatus": report.qualityStatus,
+                    "wordCount": report.wordCount,
                 },
             )
 
@@ -1706,6 +1714,13 @@ def _safe_job_failure_data(job_data: dict[str, Any]) -> dict[str, Any] | None:
     }
 
 
+def _safe_nonnegative_int(value: Any, default: int = 0) -> int:
+    try:
+        return max(int(value), 0)
+    except (TypeError, ValueError):
+        return default
+
+
 def _admin_job_filters(
     *,
     status: str | None = None,
@@ -1926,6 +1941,14 @@ def get_admin_assessments(
         report_status = report_data.get("generationStatus") if report_data else None
         if report_status is None and task_status == "failed":
             report_status = "failed"
+        failure = _safe_job_failure_data(job_data)
+        stage = job_data.get("stage") or ("completed" if task_status == "success" else task_status)
+        raw_progress = job_data.get("progress")
+        try:
+            progress = int(raw_progress)
+        except (TypeError, ValueError):
+            progress = 100 if task_status == "success" else 0
+        progress = max(0, min(progress, 100))
         display_name = (
             assessment_data.get("studentName")
             or row["display_name"]
@@ -1947,11 +1970,19 @@ def get_admin_assessments(
                 "grade": row["grade"] or "",
                 "collegeMajor": row["college_major"] or "",
                 "taskStatus": task_status,
+                "stage": stage,
+                "progress": progress,
+                "message": job_data.get("message") or "",
+                "attempts": _safe_nonnegative_int(job_data.get("attempts")),
+                "workerAttempts": _safe_nonnegative_int(job_data.get("workerAttempts")),
+                "llmRequestAttempts": _safe_nonnegative_int(job_data.get("llmRequestAttempts")),
+                "llmRetryCount": _safe_nonnegative_int(job_data.get("llmRetryCount")),
+                "qualityRepairCount": _safe_nonnegative_int(job_data.get("qualityRepairCount")),
                 "reportStatus": report_status,
                 "reportId": report_data.get("id") if report_data else job_data.get("reportId"),
                 "draftAvailable": bool(row["draft_available"]),
-                "failure": _safe_job_failure_data(job_data),
-                "error": (_safe_job_failure_data(job_data) or {}).get("message"),
+                "failure": failure,
+                "error": (failure or {}).get("message"),
             }
         )
     return {"total": int(total_row["total"]), "items": items}
@@ -2028,6 +2059,7 @@ def get_recent_reports(limit: int = 8) -> list[dict[str, Any]]:
             """
             SELECT data
             FROM reports
+            WHERE generation_status = 'success'
             ORDER BY created_at DESC
             LIMIT %s
             """,
@@ -2075,6 +2107,7 @@ def get_admin_records() -> list[dict[str, Any]]:
             FROM reports
             LEFT JOIN users ON users.id = reports.user_id
             LEFT JOIN assessment_responses ON assessment_responses.id = reports.response_id
+            WHERE reports.generation_status = 'success'
             ORDER BY reports.created_at DESC
             """
         ).fetchall()
@@ -2283,7 +2316,13 @@ def record_admin_audit(
 
 def get_admin_audit_logs(*, limit: int = 50, offset: int = 0) -> dict[str, Any]:
     with _connect() as connection:
-        total_row = connection.execute("SELECT COUNT(*) AS total FROM admin_audit_logs").fetchone()
+        total_row = connection.execute(
+            """
+            SELECT COUNT(*) AS total
+            FROM admin_audit_logs
+            WHERE action IN ('report.update', 'report.delete')
+            """
+        ).fetchone()
         rows = connection.execute(
             """
             SELECT logs.id,
@@ -2297,6 +2336,7 @@ def get_admin_audit_logs(*, limit: int = 50, offset: int = 0) -> dict[str, Any]:
                    logs.details
             FROM admin_audit_logs AS logs
             LEFT JOIN users ON users.id = logs.admin_id
+            WHERE logs.action IN ('report.update', 'report.delete')
             ORDER BY logs.created_at DESC
             LIMIT %s OFFSET %s
             """,

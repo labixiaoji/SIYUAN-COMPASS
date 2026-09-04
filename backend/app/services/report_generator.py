@@ -17,7 +17,7 @@ from app.services.report_prompt import build_report_messages
 from app.services.profile_prompt import redact_model_forbidden_values
 from app.services.report_quality_check import check_report_quality, count_chineseish_words
 
-REPORT_PROMPT_VERSION = "career-blueprint-v1.1.0"
+REPORT_PROMPT_VERSION = "career-blueprint-v1.2.0"
 
 
 class ReportGenerationError(RuntimeError):

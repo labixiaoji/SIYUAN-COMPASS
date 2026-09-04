@@ -57,11 +57,11 @@ export function AdminGenerationJobDetailPage() {
     if (!jobId) return;
     fetchAdminGenerationJob(jobId)
       .then(setJob)
-      .catch((caught) => setError(caught instanceof Error ? caught.message : "生成任务加载失败。"));
+      .catch((caught) => setError(caught instanceof Error ? caught.message : "生成状态加载失败。"));
   }, [jobId]);
 
   if (error) return <main className="shell page"><div className="error">{error}</div></main>;
-  if (!job) return <main className="shell page"><div className="panel">生成任务加载中...</div></main>;
+  if (!job) return <main className="shell page"><div className="panel">生成状态加载中...</div></main>;
 
   const failure = job.failure || (job.status === "failed" ? {
     code: "LEGACY_ERROR",
@@ -73,7 +73,7 @@ export function AdminGenerationJobDetailPage() {
   return (
     <main className="shell page admin-detail-page">
       <div className="page-title">
-        <h1>生成任务详情</h1>
+        <h1>生成状态详情</h1>
         <p>任务编号：{job.jobId}</p>
       </div>
 
@@ -133,9 +133,9 @@ export function AdminGenerationJobDetailPage() {
         <h2>关联数据</h2>
         <div className="actions">
           {job.responseId && <Link className="button secondary" to={`/admin/assessments/${job.responseId}`}>查看已保存问卷</Link>}
-          {job.draftAvailable && <Link className="button secondary" to={`/admin/generation-jobs/${job.jobId}/draft`}>查看失败任务问卷</Link>}
+          {job.draftAvailable && <Link className="button secondary" to={`/admin/generation-jobs/${job.jobId}/draft`}>查看保留问卷草稿</Link>}
           {job.reportId && <Link className="button" to={`/reports/${job.reportId}`}>查看报告</Link>}
-          <Link className="button secondary" to="/admin/generation-jobs">返回生成任务</Link>
+          <Link className="button secondary" to="/admin/assessments">返回填写记录</Link>
         </div>
       </section>
     </main>

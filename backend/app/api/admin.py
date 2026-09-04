@@ -17,7 +17,6 @@ from app.storage.json_db import (
     get_metrics,
     get_recent_reports,
     load_generation_job_recovery_draft,
-    record_admin_audit,
     update_report,
 )
 
@@ -34,13 +33,11 @@ def _validate_job_status(status: str) -> str:
 
 @router.get("/admin/metrics")
 def admin_metrics(admin=Depends(require_admin)):
-    record_admin_audit(admin["id"], "admin.metrics.read", "report_collection", "metrics")
     return {**get_metrics(), "recentReports": get_recent_reports()}
 
 
 @router.get("/admin/records")
 def admin_records(admin=Depends(require_admin)):
-    record_admin_audit(admin["id"], "admin.records.read", "report_collection", "all")
     return {"records": get_admin_records()}
 
 
@@ -53,7 +50,6 @@ def admin_assessments(
     admin=Depends(require_admin),
 ):
     _validate_job_status(status)
-    record_admin_audit(admin["id"], "admin.assessments.read", "assessment_collection", "all")
     return get_admin_assessments(
         status=status,
         keyword=keyword,
@@ -71,7 +67,6 @@ def admin_generation_jobs(
     admin=Depends(require_admin),
 ):
     _validate_job_status(status)
-    record_admin_audit(admin["id"], "admin.generation_jobs.read", "generation_job_collection", status)
     return get_admin_generation_jobs(
         status=status,
         keyword=keyword,
@@ -91,7 +86,6 @@ def admin_generation_job_draft(job_id: str, admin=Depends(require_admin)):
             status_code=410,
             detail={"error": "该任务没有可查看的问卷草稿，或已超过保留期限。"},
         )
-    record_admin_audit(admin["id"], "generation_job.draft.read", "generation_job", job_id)
     return draft
 
 
@@ -100,7 +94,6 @@ def admin_generation_job(job_id: str, admin=Depends(require_admin)):
     job = get_admin_generation_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail={"error": "生成任务不存在或已过期"})
-    record_admin_audit(admin["id"], "generation_job.read", "generation_job", job_id)
     return job
 
 
@@ -109,7 +102,6 @@ def admin_assessment(response_id: str, admin=Depends(require_admin)):
     response = find_response(response_id)
     if not response:
         raise HTTPException(status_code=404, detail={"error": "问卷不存在"})
-    record_admin_audit(admin["id"], "assessment.read", "assessment", response_id)
     return response.model_dump(mode="json")
 
 
@@ -119,7 +111,6 @@ def admin_audit_logs(
     offset: int = Query(default=0, ge=0),
     admin=Depends(require_admin),
 ):
-    record_admin_audit(admin["id"], "admin.audit.read", "audit_log", "all")
     return get_admin_audit_logs(limit=limit, offset=offset)
 
 

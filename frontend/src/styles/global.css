@@ -808,6 +808,27 @@ select {
   min-width: 1120px !important;
 }
 
+.admin-assessment-table {
+  min-width: 1180px !important;
+}
+
+.admin-progress-track {
+  background: var(--line);
+  border-radius: 999px;
+  height: 6px;
+  margin: 8px 0 5px;
+  overflow: hidden;
+  width: min(180px, 100%);
+}
+
+.admin-progress-track span {
+  background: var(--accent);
+  border-radius: inherit;
+  display: block;
+  height: 100%;
+  transition: width 180ms ease;
+}
+
 .admin-id-text {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   letter-spacing: 0.02em;

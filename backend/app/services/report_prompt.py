@@ -3,8 +3,34 @@ import json
 from app.schemas.assessment import AssessmentResponse
 from app.schemas.profile import CareerProfile
 from app.services.profile_prompt import (
-    MODEL_EXCLUDED_RESPONSE_FIELDS,
+    build_model_safe_response_payload,
+    compact_model_payload,
     redact_model_forbidden_values,
+)
+
+REPORT_DIRECT_RESPONSE_FIELDS = frozenset(
+    {
+        "educationStage",
+        "grade",
+        "collegeMajor",
+        "hometown",
+        "careerConfusions",
+        "careerConfusionOther",
+        "mainConfusionText",
+        "fiveYearCity",
+        "fiveYearIndustry",
+        "fiveYearRole",
+        "fiveYearFamilyStatus",
+        "fiveYearHousingPlan",
+        "fiveYearHobbiesSkills",
+        "tenYearCity",
+        "tenYearIndustry",
+        "tenYearRole",
+        "tenYearFamilyStatus",
+        "tenYearHousingPlan",
+        "tenYearHobbiesSkills",
+        "topValuesRanked",
+    }
 )
 
 
@@ -13,10 +39,18 @@ def _list(items: list[str]) -> str:
 
 
 def build_report_messages(response: AssessmentResponse, profile: CareerProfile) -> list[dict[str, str]]:
-    # Work from a redacted model copy so a future prompt edit cannot expose a
-    # forbidden response property simply by interpolating it.
-    safe_response = response.model_copy(
-        update={field_name: None for field_name in MODEL_EXCLUDED_RESPONSE_FIELDS}
+    # Reuse the same approved, compact payload as the profile stage.  This
+    # avoids maintaining a second hand-written list of report input fields.
+    response_payload = compact_model_payload(build_model_safe_response_payload(response))
+    response_payload = {
+        field_name: value
+        for field_name, value in response_payload.items()
+        if field_name in REPORT_DIRECT_RESPONSE_FIELDS
+    }
+    response_json = json.dumps(
+        response_payload,
+        ensure_ascii=False,
+        separators=(",", ":"),
     )
     structured_profile = json.dumps(
         {
@@ -35,7 +69,7 @@ def build_report_messages(response: AssessmentResponse, profile: CareerProfile) 
             "reportEvidenceMap": profile.reportEvidenceMap,
         },
         ensure_ascii=False,
-        indent=2,
+        separators=(",", ":"),
     )
     structured_profile = redact_model_forbidden_values(structured_profile, response)
     user_content = f"""
@@ -64,7 +98,7 @@ def build_report_messages(response: AssessmentResponse, profile: CareerProfile) 
 “这个困惑背后的真正问题是什么？”
 “接下来可以如何验证？”
 这三段必须引用学生选择的careerConfusions，并回应mainConfusionText；如果mainConfusionText未填写，也必须根据已选困惑说明当前最需要验证的问题，不允许只泛泛鼓励。
-在“你现在最大的困惑是什么？”下面必须原文写出一句：“当前选择的困惑包括：{_list(safe_response.careerConfusions)}。”，然后再解释含义。
+在“你现在最大的困惑是什么？”下面必须原文写出一句：“当前选择的困惑包括：{_list(response.careerConfusions)}。”，然后再解释含义。
 随后必须提出“Plan A：主攻路径”“Plan B：备选路径”和“Plan C：系统建议路径”。Plan A和Plan B必须沿用结构化画像给出的方向，只能补充表达和执行细节；Plan C必须跳出学生原有设定，基于系统识别的优势、兴趣、限制和风险给出第三条值得探索的路径，不能重复Plan A或Plan B。分别说明路径内容、适配依据、目标行业和城市契合度、进入难度、主要收益、机会成本和切换条件，最后给出清晰但不绝对的当前建议。
 “Plan A：主攻路径”“Plan B：备选路径”和“Plan C：系统建议路径”必须分别作为独立小标题；三组下面的编号都必须各自从1开始。
 
@@ -98,46 +132,10 @@ def build_report_messages(response: AssessmentResponse, profile: CareerProfile) 
 - Plan C优先沿用结构化画像中的planC；如果planC为空，则只能基于结构化画像的优势、兴趣、限制、风险、信息缺口和脱敏问卷生成低成本验证型建议，不得凭空创造经历或确定结论。
 - 画像中指出的信息缺口和矛盾必须转化为验证行动，不得用猜测填补。
 
-学生信息（已按最小必要原则脱敏）：
-- 学历阶段：{safe_response.educationStage or "未填写"}
-- 年级：{safe_response.grade}
-- 专业：{safe_response.collegeMajor}
-- 家乡或成长地：{safe_response.hometown or "未填写"}
-- 当前困惑：{_list(safe_response.careerConfusions)}；其他困惑={safe_response.careerConfusionOther or "无"}
-- 主要困惑描述：{safe_response.mainConfusionText or "未填写"}
-- 读硕士意向：{safe_response.mastersIntention}
-- 硕士规划：{safe_response.mastersPlan or "未填写"}
-- 读博士意向：{safe_response.phdIntention}
-- 博士规划：{safe_response.phdPlan or "未填写"}
-- 博士后续发展方向：{safe_response.doctoralCareerDirection or "不适用"}；其他方向={safe_response.doctoralCareerOther or "无"}
-- 教育路径原因：{_list(safe_response.educationPathReasons)}；其他原因={safe_response.educationPathReasonOther or "无"}
-- 五年愿景：城市={safe_response.fiveYearCity}；行业={safe_response.fiveYearIndustry}；岗位/角色={safe_response.fiveYearRole}
-- 五年生活：家庭状态={safe_response.fiveYearFamilyStatus}；住房={safe_response.fiveYearHousingPlan}；爱好与核心技能={safe_response.fiveYearHobbiesSkills}
-- 十年愿景：城市={safe_response.tenYearCity}；行业={safe_response.tenYearIndustry}；岗位/角色={safe_response.tenYearRole}
-- 十年生活：家庭状态={safe_response.tenYearFamilyStatus}；住房={safe_response.tenYearHousingPlan}；爱好与核心技能={safe_response.tenYearHobbiesSkills}
-- 价值观前三项：{_list(safe_response.topValuesRanked)}
-- 能力自评：逻辑={safe_response.abilityScores.logic}/5；表达={safe_response.abilityScores.expression}/5；空间设计={safe_response.abilityScores.spatialDesign}/5；人际理解={safe_response.abilityScores.interpersonal}/5
-- 兴趣倾向：动手={safe_response.interestScores.handsOn}/5；研究={safe_response.interestScores.research}/5；创作={safe_response.interestScores.creation}/5；助人={safe_response.interestScores.helping}/5；领导影响={safe_response.interestScores.leadership}/5；规则细节={safe_response.interestScores.detail}/5
-- 学业竞争力：GPA={safe_response.currentGpa or "未填写"} / {safe_response.gpaScale or "未填写"}；排名={safe_response.majorRank or "未填写"} / {safe_response.majorTotal or "未填写"}；挂科重修={safe_response.failedCourseStatus or "未填写"}
-- 第二专业：{safe_response.hasSecondMajor or "未填写"}；名称={safe_response.secondMajorName or "未填写"}；程度={safe_response.secondMajorProgress or "未填写"}；职业相关意愿={safe_response.secondMajorCareerInterest or "未填写"}
-- 转专业：{safe_response.hasTransferredMajor or "未填写"}；原专业={safe_response.originalMajorName or "未填写"}；原因={safe_response.transferReason or "未填写"}；原专业能力保留={safe_response.originalMajorRetainedSkills or "未填写"}
-- 常被称赞的特质：{_list(safe_response.praisedTraits)}
-- 特质成果证据：{safe_response.traitEvidence or "未填写"}
-- 兴趣探索：沉浸活动={safe_response.immersiveActivities or "未填写"}；喜欢知识={safe_response.favoriteKnowledgeAreas or "未填写"}；无奖励也愿意做={safe_response.selfDrivenActivities or "未填写"}；偏好工作方式={_list(safe_response.preferredWorkStyle)}
-- 已有准备：{_list(safe_response.currentPreparations)}；其他准备={safe_response.currentPreparationOther or "无"}
-- 准备细节：{safe_response.preparationDetails or "未填写"}
-- 缺少资源：{_list(safe_response.missingResources)}
-- 专业去向认知：{safe_response.majorOutcomeAwareness}
-- 岗位认知：{safe_response.targetJobAwareness}
-- 信息渠道：{_list(safe_response.jobInfoChannels)}；其他渠道={safe_response.jobInfoChannelOther or "无"}
-- 健康精力：{safe_response.healthEnergyStatus}
-- 运动情况：{safe_response.exerciseFrequency or "未填写"}
-- 长期坚持能力：{safe_response.longTermPersistence}/5
-- 执行力：{safe_response.executionStyle or "未填写"}
-- 抗压恢复：失败恢复={safe_response.failureRecoveryTime or "未填写"}；自我怀疑={safe_response.selfDoubtFrequency or "未填写"}；解决问题方式={safe_response.problemSolvingStyle or "未填写"}；需要支持={safe_response.supportNeed or "未填写"}
-- 工作承受：高强度经历={safe_response.highIntensityExperience or "未填写"}；事务性工作接受={safe_response.routineWorkTolerance or "未填写"}；职业风险偏好={safe_response.careerRiskPreference or "未填写"}
+问卷补充信息（仅保留困惑、基本信息和5—10年愿景；键名为问卷字段英文名，未出现的字段表示未提供）：
+{response_json}
 
-结构化画像分析：
+结构化画像分析（JSON；这是报告的主要依据）：
 {structured_profile}
 """.strip()
     user_content = redact_model_forbidden_values(user_content, response)
@@ -146,11 +144,9 @@ def build_report_messages(response: AssessmentResponse, profile: CareerProfile) 
         {
             "role": "system",
             "content": (
-                "你是一名温和、严谨、熟悉高校学生发展规律的生涯规划顾问。"
-                "请基于学生的最小必要脱敏问卷和画像生成中文《我的生涯蓝图》。"
-                "所有判断都必须能在输入信息中找到依据，不虚构经历，不做人格定论，不制造焦虑。"
-                "结构化画像已经完成分析判断，你负责依据画像证据写作，不得绕过证据重新发明结论。"
-                "报告要写实、具体、有分析深度，既指出问题，也给出可执行的三路径方案。"
+                "你是一名高校生涯规划顾问。依据脱敏问卷和已完成的结构化画像，"
+                "只写有证据、可执行、不过度承诺的中文《我的生涯蓝图》；不得虚构经历、"
+                "做人格/心理诊断或绕过画像重新发明结论。"
             ),
         },
         {

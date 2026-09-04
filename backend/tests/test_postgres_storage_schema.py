@@ -4,6 +4,7 @@ import unittest
 
 STORAGE_SOURCE = Path("app/storage/json_db.py").read_text(encoding="utf-8")
 ADMIN_API_SOURCE = Path("app/api/admin.py").read_text(encoding="utf-8")
+REPORTS_API_SOURCE = Path("app/api/reports.py").read_text(encoding="utf-8")
 
 
 class PostgresStorageSchemaTest(unittest.TestCase):
@@ -71,6 +72,14 @@ class PostgresStorageSchemaTest(unittest.TestCase):
         self.assertIn('/admin/assessments', ADMIN_API_SOURCE)
         self.assertIn("get_admin_generation_jobs", STORAGE_SOURCE)
         self.assertIn("get_admin_assessments", STORAGE_SOURCE)
+
+    def test_admin_read_endpoints_do_not_create_audit_events(self):
+        self.assertNotIn("record_admin_audit", ADMIN_API_SOURCE)
+        self.assertNotIn("record_admin_audit", REPORTS_API_SOURCE)
+        self.assertIn("action IN ('report.update', 'report.delete')", STORAGE_SOURCE)
+
+    def test_admin_report_collection_only_contains_successful_reports(self):
+        self.assertIn("WHERE reports.generation_status = 'success'", STORAGE_SOURCE)
 
     def test_failed_job_recovery_uses_retained_input_and_draft_link(self):
         self.assertIn("source_job_id", STORAGE_SOURCE)

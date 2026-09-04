@@ -98,6 +98,14 @@ export type AdminAssessmentRecord = {
   grade?: string;
   collegeMajor?: string;
   taskStatus: string;
+  stage?: string | null;
+  progress?: number | null;
+  message?: string | null;
+  attempts?: number;
+  workerAttempts?: number;
+  llmRequestAttempts?: number;
+  llmRetryCount?: number;
+  qualityRepairCount?: number;
   reportStatus?: string | null;
   reportId?: string | null;
   draftAvailable: boolean;

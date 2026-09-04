@@ -379,9 +379,8 @@ class GenerationQuotaPersistenceTest(TestCase):
 
 
 class AdminAuditTest(TestCase):
-    @patch.object(reports, "record_admin_audit")
     @patch.object(reports, "find_report")
-    def test_generic_admin_report_read_is_audited(self, find_report, record_audit):
+    def test_generic_admin_report_read_is_not_audited(self, find_report):
         find_report.return_value = SimpleNamespace(userId="student-1")
 
         reports._get_report_or_404(
@@ -389,12 +388,6 @@ class AdminAuditTest(TestCase):
             {"id": "admin-1", "role": "admin"},
         )
 
-        record_audit.assert_called_once_with(
-            "admin-1",
-            "report.read",
-            "report",
-            "report-1",
-        )
 
     @patch.object(reports, "delete_report_bundle")
     @patch.object(reports, "_get_report_or_404")
@@ -415,20 +408,12 @@ class AdminAuditTest(TestCase):
 
     @patch.object(admin, "get_recent_reports", return_value=[])
     @patch.object(admin, "get_metrics", return_value={})
-    @patch.object(admin, "record_admin_audit")
-    def test_metrics_sensitive_read_is_audited(self, record_audit, _metrics, _recent):
+    def test_metrics_sensitive_read_is_not_audited(self, _metrics, _recent):
         admin.admin_metrics({"id": "admin-1", "role": "admin"})
 
-        record_audit.assert_called_once_with(
-            "admin-1",
-            "admin.metrics.read",
-            "report_collection",
-            "metrics",
-        )
 
     @patch.object(admin, "get_admin_generation_jobs", return_value={"total": 1, "items": []})
-    @patch.object(admin, "record_admin_audit")
-    def test_admin_failure_job_list_is_audited_and_filtered(self, record_audit, get_jobs):
+    def test_admin_failure_job_list_is_not_audited_and_filtered(self, get_jobs):
         result = admin.admin_generation_jobs(
             status="failed",
             keyword=None,
@@ -439,12 +424,6 @@ class AdminAuditTest(TestCase):
 
         self.assertEqual(result["total"], 1)
         get_jobs.assert_called_once_with(status="failed", keyword=None, limit=20, offset=0)
-        record_audit.assert_called_once_with(
-            "admin-1",
-            "admin.generation_jobs.read",
-            "generation_job_collection",
-            "failed",
-        )
 
     @patch.object(admin, "get_admin_generation_jobs", return_value={"total": 0, "items": []})
     def test_admin_generation_jobs_rejects_unknown_status(self, _get_jobs):
@@ -460,8 +439,7 @@ class AdminAuditTest(TestCase):
         self.assertEqual(raised.exception.status_code, 400)
 
     @patch.object(admin, "get_admin_assessments", return_value={"total": 2, "items": []})
-    @patch.object(admin, "record_admin_audit")
-    def test_admin_assessment_list_is_audited(self, record_audit, get_assessments):
+    def test_admin_assessment_list_is_not_audited(self, get_assessments):
         result = admin.admin_assessments(
             status="all",
             keyword="计算机",
@@ -477,12 +455,6 @@ class AdminAuditTest(TestCase):
             limit=20,
             offset=0,
         )
-        record_audit.assert_called_once_with(
-            "admin-1",
-            "admin.assessments.read",
-            "assessment_collection",
-            "all",
-        )
 
     @patch.object(admin, "load_generation_job_recovery_draft", return_value={
         "jobId": "job-1",
@@ -492,10 +464,8 @@ class AdminAuditTest(TestCase):
         "source": "job_input",
     })
     @patch.object(admin, "get_admin_generation_job", return_value={"userId": "student-1"})
-    @patch.object(admin, "record_admin_audit")
-    def test_admin_can_read_failed_job_draft_with_audit(
+    def test_admin_can_read_failed_job_draft_without_audit(
         self,
-        record_audit,
         _get_job,
         load_draft,
     ):
@@ -506,12 +476,6 @@ class AdminAuditTest(TestCase):
 
         self.assertEqual(result["jobId"], "job-1")
         load_draft.assert_called_once_with("job-1", user_id="student-1")
-        record_audit.assert_called_once_with(
-            "admin-1",
-            "generation_job.draft.read",
-            "generation_job",
-            "job-1",
-        )
 
     @patch.object(admin, "find_report", return_value=SimpleNamespace())
     def test_admin_cannot_save_obvious_contact_details_in_report(self, _find_report):
