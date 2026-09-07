@@ -1,13 +1,17 @@
 import asyncio
 from types import SimpleNamespace
 import unittest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 from app.llm import provider
 from app.llm.errors import LLMProviderError, error_kind_for_status
 
 
-def settings(selected_provider: str = "kimi", max_output_tokens: int = 10000) -> SimpleNamespace:
+def settings(
+    selected_provider: str = "kimi",
+    max_output_tokens: int = 10000,
+    max_requests_per_minute: int = 0,
+) -> SimpleNamespace:
     return SimpleNamespace(
         llm_provider=selected_provider,
         kimi_api_key="kimi-key",
@@ -17,6 +21,7 @@ def settings(selected_provider: str = "kimi", max_output_tokens: int = 10000) ->
         deepseek_base_url="https://api.deepseek.com",
         deepseek_model="deepseek-chat",
         llm_max_concurrency=3,
+        llm_max_requests_per_minute=max_requests_per_minute,
         llm_max_retries=2,
         llm_max_output_tokens=max_output_tokens,
     )
@@ -133,11 +138,14 @@ class LlmProviderTest(unittest.TestCase):
         ]
         call = AsyncMock(side_effect=call_results)
         sleep = AsyncMock()
+        rate_limiter = Mock()
+        rate_limiter.acquire = AsyncMock()
 
         async def exercise():
             with (
                 patch.object(provider, "get_settings", return_value=settings("kimi")),
                 patch.object(provider, "create_kimi_chat_completion", call),
+                patch.object(provider, "_get_llm_rate_limiter", return_value=rate_limiter),
                 patch.object(provider.asyncio, "sleep", sleep),
             ):
                 return await provider.create_chat_completion(
@@ -151,6 +159,39 @@ class LlmProviderTest(unittest.TestCase):
         self.assertEqual(stats.request_attempts, 3)
         self.assertEqual(stats.retry_count, 2)
         self.assertEqual([item.args[0] for item in sleep.await_args_list], [2.0, 5.0])
+        self.assertEqual(rate_limiter.acquire.await_count, 3)
+
+    def test_retry_after_defers_the_shared_rate_limiter(self) -> None:
+        call = AsyncMock(
+            side_effect=[
+                LLMProviderError(
+                    "限流",
+                    kind="rate_limit",
+                    status_code=429,
+                    retry_after_seconds=7,
+                ),
+                {"content": "ok"},
+            ]
+        )
+        sleep = AsyncMock()
+        rate_limiter = Mock()
+        rate_limiter.acquire = AsyncMock()
+        rate_limiter.defer = AsyncMock()
+
+        async def exercise():
+            with (
+                patch.object(provider, "get_settings", return_value=settings("kimi")),
+                patch.object(provider, "create_kimi_chat_completion", call),
+                patch.object(provider, "_get_llm_rate_limiter", return_value=rate_limiter),
+                patch.object(provider.asyncio, "sleep", sleep),
+            ):
+                return await provider.create_chat_completion(
+                    [{"role": "user", "content": "hello"}]
+                )
+
+        self.assertEqual(asyncio.run(exercise()), {"content": "ok"})
+        rate_limiter.defer.assert_awaited_once_with(7)
+        self.assertEqual([item.args[0] for item in sleep.await_args_list], [7])
 
     def test_authentication_errors_are_not_retried(self) -> None:
         stats = provider.LLMCallStats()
@@ -174,6 +215,37 @@ class LlmProviderTest(unittest.TestCase):
 
     def test_http_timeout_is_retryable(self) -> None:
         self.assertEqual(error_kind_for_status(408), "timeout")
+
+
+class RequestRateLimiterTest(unittest.IsolatedAsyncioTestCase):
+    async def test_requests_are_smoothed_across_the_minute(self):
+        current_time = [0.0]
+        delays: list[float] = []
+
+        async def fake_sleep(delay: float) -> None:
+            delays.append(delay)
+            current_time[0] += delay
+
+        limiter = provider._RequestRateLimiter(
+            2,
+            clock=lambda: current_time[0],
+            sleeper=fake_sleep,
+        )
+
+        await limiter.acquire()
+        await limiter.acquire()
+        await limiter.acquire()
+
+        self.assertEqual(delays, [30.0, 30.0])
+
+    async def test_zero_disables_rate_limiting(self):
+        sleep = AsyncMock()
+        limiter = provider._RequestRateLimiter(0, sleeper=sleep)
+
+        await limiter.acquire()
+        await limiter.acquire()
+
+        sleep.assert_not_awaited()
 
 
 if __name__ == "__main__":

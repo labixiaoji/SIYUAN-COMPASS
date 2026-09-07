@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import time
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -29,13 +31,64 @@ _LLM_SEMAPHORE_LOOP: asyncio.AbstractEventLoop | None = None
 _LLM_SEMAPHORE_LIMIT: int | None = None
 
 
+class _RequestRateLimiter:
+    """进程级平滑限制模型请求启动速率。"""
+
+    def __init__(
+        self,
+        max_requests_per_minute: int,
+        *,
+        clock: Callable[[], float] | None = None,
+        sleeper: Callable[[float], Awaitable[None]] | None = None,
+    ) -> None:
+        self._interval_seconds = (
+            60.0 / max_requests_per_minute if max_requests_per_minute > 0 else 0.0
+        )
+        self._clock = clock or time.monotonic
+        self._sleeper = sleeper or asyncio.sleep
+        self._lock = asyncio.Lock()
+        self._next_allowed_at = 0.0
+
+    async def acquire(self) -> None:
+        """等待到下一个模型请求可以启动的时间。"""
+
+        if self._interval_seconds <= 0:
+            return
+        async with self._lock:
+            now = self._clock()
+            wait_seconds = max(self._next_allowed_at - now, 0.0)
+            self._next_allowed_at = max(now, self._next_allowed_at) + self._interval_seconds
+            if wait_seconds > 0:
+                await self._sleeper(wait_seconds)
+
+    async def defer(self, delay_seconds: float) -> None:
+        """根据供应商 Retry-After 推迟共享的下一个请求时隙。"""
+
+        if self._interval_seconds <= 0 or delay_seconds <= 0:
+            return
+        async with self._lock:
+            self._next_allowed_at = max(
+                self._next_allowed_at,
+                self._clock() + delay_seconds,
+            )
+
+
+_LLM_RATE_LIMITER: _RequestRateLimiter | None = None
+_LLM_RATE_LIMITER_LOOP: asyncio.AbstractEventLoop | None = None
+_LLM_RATE_LIMITER_LIMIT: int | None = None
+
+
 def reset_llm_runtime() -> None:
-    """Reset the process-local limiter (used by lifecycle tests)."""
+    """重置进程级并发和 RPM 限制器（供生命周期测试使用）。"""
 
     global _LLM_SEMAPHORE, _LLM_SEMAPHORE_LOOP, _LLM_SEMAPHORE_LIMIT
+    global _LLM_RATE_LIMITER, _LLM_RATE_LIMITER_LOOP, _LLM_RATE_LIMITER_LIMIT
     _LLM_SEMAPHORE = None
     _LLM_SEMAPHORE_LOOP = None
     _LLM_SEMAPHORE_LIMIT = None
+    _LLM_RATE_LIMITER = None
+    _LLM_RATE_LIMITER_LOOP = None
+    _LLM_RATE_LIMITER_LIMIT = None
 
 
 def _get_llm_semaphore() -> asyncio.Semaphore:
@@ -51,6 +104,21 @@ def _get_llm_semaphore() -> asyncio.Semaphore:
         _LLM_SEMAPHORE_LOOP = loop
         _LLM_SEMAPHORE_LIMIT = limit
     return _LLM_SEMAPHORE
+
+
+def _get_llm_rate_limiter() -> _RequestRateLimiter:
+    global _LLM_RATE_LIMITER, _LLM_RATE_LIMITER_LOOP, _LLM_RATE_LIMITER_LIMIT
+    loop = asyncio.get_running_loop()
+    limit = max(int(getattr(get_settings(), "llm_max_requests_per_minute", 8)), 0)
+    if (
+        _LLM_RATE_LIMITER is None
+        or _LLM_RATE_LIMITER_LOOP is not loop
+        or _LLM_RATE_LIMITER_LIMIT != limit
+    ):
+        _LLM_RATE_LIMITER = _RequestRateLimiter(limit)
+        _LLM_RATE_LIMITER_LOOP = loop
+        _LLM_RATE_LIMITER_LIMIT = limit
+    return _LLM_RATE_LIMITER
 
 
 def get_llm_provider() -> str:
@@ -111,15 +179,16 @@ async def create_chat_completion(
         ),
         1,
     )
+    rate_limiter = _get_llm_rate_limiter()
 
     for attempt in range(max_retries + 1):
         if stats is not None:
             stats.request_attempts += 1
             stats.last_attempt_kind = "model_request" if attempt == 0 else "network_retry"
         try:
-            # The semaphore is held only while the provider request is active;
-            # exponential/backoff sleep happens after release.
+            # 限流等待和实际供应商请求都占用一个并发槽位，避免多个等待者在槽位释放后形成请求突发。
             async with _get_llm_semaphore():
+                await rate_limiter.acquire()
                 if provider == "deepseek":
                     return await create_deepseek_chat_completion(
                         messages,
@@ -148,6 +217,8 @@ async def create_chat_completion(
             stats.last_attempt_kind = "network_retry"
         retry_after = normalized.retry_after_seconds
         delay = retry_after if retry_after is not None and retry_after > 0 else (2.0 if attempt == 0 else 5.0)
+        if retry_after is not None and retry_after > 0:
+            await rate_limiter.defer(retry_after)
         await asyncio.sleep(delay)
 
     raise AssertionError("unreachable")

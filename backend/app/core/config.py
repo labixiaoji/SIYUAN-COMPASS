@@ -21,6 +21,8 @@ class Settings(BaseSettings):
     # and configurable rather than relying on the HTTP client's short default.
     llm_timeout_seconds: float = Field(default=600, gt=0)
     llm_max_concurrency: int = Field(default=3, ge=1)
+    # 按请求启动时间平滑限制每分钟模型请求次数；0 表示关闭。
+    llm_max_requests_per_minute: int = Field(default=8, ge=0)
     llm_max_retries: int = Field(default=2, ge=0)
     # Maximum number of output tokens requested from the selected provider.
     # This is not the provider model's total context-window size.
