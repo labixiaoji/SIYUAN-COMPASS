@@ -354,6 +354,30 @@ class GenerationFailureTest(TestCase):
         self.assertNotIn("13900138000", failure.message)
         self.assertEqual(failure.traceId, "job-1")
 
+    def test_report_quality_failure_is_not_misclassified_as_authentication(self):
+        failure = generation_jobs.build_generation_failure(
+            "job-quality",
+            "report",
+            RuntimeError(
+                "大模型返回的报告经自动修复后仍未通过质量校验："
+                "缺少关键内容：Plan A；缺少关键内容：Plan B"
+            ),
+        )
+
+        self.assertEqual(failure.code, "REPORT_QUALITY_FAILED")
+        self.assertFalse(failure.retryable)
+        self.assertIsNone(failure.providerStatus)
+
+    def test_missing_model_configuration_remains_authentication_failure(self):
+        failure = generation_jobs.build_generation_failure(
+            "job-auth",
+            "report",
+            RuntimeError("大模型未配置，请检查 DEEPSEEK_API_KEY。"),
+        )
+
+        self.assertEqual(failure.code, "REPORT_MODEL_AUTH")
+        self.assertFalse(failure.retryable)
+
 
 if __name__ == "__main__":
     import unittest

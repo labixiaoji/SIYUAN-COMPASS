@@ -23,6 +23,7 @@ function makeRecord(overrides: Partial<AdminRecord> = {}): AdminRecord {
       qualityStatus: "warning",
       modelName: "deepseek",
       promptVersion: "career-blueprint-v1.2.0",
+      qualityRuleVersion: "report-quality-v2.0.0",
       retryCount: 0,
       createdAt: "2026-09-03T08:00:00Z",
       updatedAt: "2026-09-03T08:00:00Z",
@@ -90,6 +91,7 @@ describe("AdminReportsPage", () => {
     expect(screen.getAllByText("报告状态")).toHaveLength(3);
     expect(screen.getAllByText("反馈记录")).toHaveLength(2);
     expect(screen.getByText("学院：计算机学院")).toBeInTheDocument();
+    expect(screen.getAllByText("质检：report-quality-v2.0.0")).toHaveLength(2);
   });
 
   it("支持姓名、学院和专业模糊搜索，以及报告状态和年级筛选", async () => {

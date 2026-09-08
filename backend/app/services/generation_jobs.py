@@ -127,12 +127,14 @@ def _failure_code(stage: str, error: BaseException) -> tuple[str, bool]:
         return "ASSESSMENT_SCHEMA_INVALID", False
     if any(item in normalized for item in ("timeout", "timed out", "超时")):
         return f"{prefix}_MODEL_TIMEOUT", True
-    if any(item in normalized for item in ("401", "403", "api_key", "api key", "未配置", "缺少")):
+    # Quality-gate messages commonly contain “缺少关键内容”；classify the
+    # explicit quality failure before falling back to authentication keywords.
+    if "质量" in normalized:
+        return f"{prefix}_QUALITY_FAILED", False
+    if any(item in normalized for item in ("401", "403", "api_key", "api key", "未配置")):
         return f"{prefix}_MODEL_AUTH", False
     if any(item in normalized for item in ("429", "quota", "rate limit", "限流", "额度")):
         return f"{prefix}_MODEL_QUOTA", True
-    if "质量" in normalized:
-        return f"{prefix}_QUALITY_FAILED", False
     if any(item in normalized for item in ("json", "schema", "校验", "结构")):
         return f"{prefix}_SCHEMA_INVALID", False
     if prefix == "PERSISTENCE":

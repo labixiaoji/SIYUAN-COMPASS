@@ -1744,6 +1744,25 @@ select {
   content: ".";
 }
 
+.report-list-detail {
+  align-items: start;
+  color: var(--ink);
+  display: grid;
+  gap: 9px;
+  grid-template-columns: 7px minmax(0, 1fr);
+  line-height: 1.8;
+  margin: 6px 0 0 31px;
+}
+
+.report-list-detail-dot {
+  background: var(--accent);
+  border-radius: 50%;
+  height: 5px;
+  margin-top: 11px;
+  opacity: 0.72;
+  width: 5px;
+}
+
 .action-card {
   align-items: start;
   background: var(--accent-weak);
@@ -2201,6 +2220,10 @@ select {
     margin-left: 42px;
     margin-right: 4px;
   }
+
+  .report-list-detail {
+    margin-left: 26px;
+  }
 }
 
 @media print {
@@ -2291,6 +2314,7 @@ select {
 
   .report-section p,
   .report-list-item,
+  .report-list-detail,
   .action-card,
   .action-detail {
     font-size: 10.5pt;
@@ -2299,6 +2323,7 @@ select {
 
   .action-card,
   .report-list-item,
+  .report-list-detail,
   .action-detail {
     break-inside: avoid;
     page-break-inside: avoid;

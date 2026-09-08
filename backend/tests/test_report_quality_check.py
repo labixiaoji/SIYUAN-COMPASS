@@ -4,7 +4,7 @@ from app.services.report_quality_check import check_report_quality, extract_acti
 
 
 def make_report(extra_body: str = "", include_plan_c: bool = True) -> str:
-    portrait = extra_body or "基于学生对城市、行业、岗位和生活方式的回答，可以形成一幅仍需验证的人生图景。" * 8
+    portrait = extra_body or "五年后的生活包含喜欢的城市、日常工作和稳定节奏，到了十年左右，职业角色与生活安排会逐渐清晰。" * 14
     strengths = "课程项目与持续准备提供了一些行为证据，但能力自评仍需通过真实任务验证；当前主要风险是信息不足和行动节奏不稳定。" * 10
     plan_a = "围绕当前最明确的目标建立主攻路径。下一步完成岗位访谈和一个真实项目，并以项目反馈作为继续投入或切换的条件。" * 7
     plan_b = "保留与专业基础相关的备选路径。下一步核对课程与岗位要求，通过短期实习验证兴趣，并在证据不足时降低投入。" * 7
@@ -123,6 +123,83 @@ class ReportQualityCheckTest(unittest.TestCase):
         quality = check_report_quality(content)
 
         self.assertNotIn("行动项格式或数量异常", quality["fatalWarnings"])
+
+    def test_nested_numbered_steps_are_not_counted_as_top_level_actions(self):
+        content = make_report().replace(
+            "1. 完成两次岗位访谈\n",
+            "1. 完成两次岗位访谈\n  1. 联系访谈对象\n  2. 完成访谈\n  3. 整理纪要\n",
+        )
+
+        quality = check_report_quality(content)
+
+        self.assertFalse(any("行动项格式或数量异常" in item for item in quality["warnings"]))
+
+    def test_negated_discouraged_phrase_is_not_flagged(self):
+        content = make_report().replace(
+            "## 一、你5—10年后的人生画像\n",
+            "## 一、你5—10年后的人生画像\n这不是唯一选择。\n",
+        )
+
+        quality = check_report_quality(content)
+
+        self.assertNotIn("出现不建议表达：唯一选择", quality["warnings"])
+
+    def test_template_phrase_is_flagged_for_rewrite(self):
+        content = make_report().replace(
+            "## 一、你5—10年后的人生画像\n",
+            "## 一、你5—10年后的人生画像\n综合来看，",
+        )
+
+        quality = check_report_quality(content)
+
+        self.assertEqual(quality["status"], "warning")
+        self.assertIn("出现模板化表达：综合来看", quality["warnings"])
+
+    def test_repeated_validation_term_is_flagged_for_friendlier_rewrite(self):
+        quality = check_report_quality(make_report())
+
+        self.assertTrue(
+            any(item.startswith("学生可见文字反复使用生硬术语：验证") for item in quality["warnings"])
+        )
+
+    def test_portrait_action_advice_is_flagged_for_rewrite(self):
+        content = make_report().replace(
+            "## 二、你的核心优势与风险短板",
+            "你可以先完善简历，接下来半年投递实习。\n## 二、你的核心优势与风险短板",
+        )
+
+        quality = check_report_quality(content)
+
+        self.assertTrue(
+            any(item.startswith("人生画像混入当前分析或行动建议") for item in quality["warnings"])
+        )
+
+    def test_empty_plan_body_is_fatal(self):
+        content = make_report().replace(
+            "### Plan A：主攻路径\n" + "围绕当前最明确的目标建立主攻路径。下一步完成岗位访谈和一个真实项目，并以项目反馈作为继续投入或切换的条件。" * 7,
+            "### Plan A：主攻路径\n",
+        )
+
+        quality = check_report_quality(content)
+
+        self.assertEqual(quality["status"], "failed")
+        self.assertIn("路径内容过少：Plan A", quality["fatalWarnings"])
+
+    def test_bold_semantic_subheadings_are_recognized(self):
+        content = make_report()
+        for title in (
+            "你现在最大的困惑是什么？",
+            "这个困惑背后的真正问题是什么？",
+            "接下来可以如何验证？",
+            "Plan A：主攻路径",
+            "Plan B：备选路径",
+            "Plan C：系统建议路径",
+        ):
+            content = content.replace(f"### {title}", f"**{title}**")
+
+        quality = check_report_quality(content)
+
+        self.assertFalse(any("缺少关键内容" in item for item in quality["warnings"]))
 
 
 if __name__ == "__main__":

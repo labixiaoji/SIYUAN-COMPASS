@@ -14,6 +14,7 @@ export type CareerBlueprintReport = {
   errorMessage?: string;
   modelName: string;
   promptVersion: string;
+  qualityRuleVersion?: string;
   retryCount: number;
   createdAt: string;
   updatedAt: string;

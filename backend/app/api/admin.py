@@ -5,7 +5,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from app.core.data_privacy import contains_obvious_contact_details
 from app.schemas.report import AdminReportUpdate
 from app.services.auth import require_admin
-from app.services.report_quality_check import check_report_quality, count_chineseish_words
+from app.services.report_quality_check import (
+    REPORT_QUALITY_VERSION,
+    check_report_quality,
+    count_chineseish_words,
+)
 from app.storage.json_db import (
     get_admin_assessments,
     find_report,
@@ -134,6 +138,7 @@ def edit_report(
     report.content = input_data.content.strip()
     report.wordCount = count_chineseish_words(report.content)
     report.qualityStatus = quality["status"]
+    report.qualityRuleVersion = REPORT_QUALITY_VERSION
     report.errorMessage = "；".join(quality["warnings"]) or None
     report.updatedAt = datetime.now(timezone.utc).isoformat()
     report.editedAt = report.updatedAt

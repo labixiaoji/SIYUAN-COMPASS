@@ -2,6 +2,7 @@ import json
 
 from app.schemas.assessment import AssessmentResponse
 from app.schemas.profile import CareerProfile
+from app.schemas.report import CareerBlueprintDraft
 from app.services.profile_prompt import (
     build_model_safe_response_payload,
     compact_model_payload,
@@ -38,7 +39,11 @@ def _list(items: list[str]) -> str:
     return "、".join(items) if items else "暂未填写"
 
 
-def build_report_messages(response: AssessmentResponse, profile: CareerProfile) -> list[dict[str, str]]:
+def build_report_messages(
+    response: AssessmentResponse,
+    profile: CareerProfile,
+    retry_reason: str | None = None,
+) -> list[dict[str, str]]:
     # Reuse the same approved, compact payload as the profile stage.  This
     # avoids maintaining a second hand-written list of report input fields.
     response_payload = compact_model_payload(build_model_safe_response_payload(response))
@@ -72,71 +77,44 @@ def build_report_messages(response: AssessmentResponse, profile: CareerProfile) 
         separators=(",", ":"),
     )
     structured_profile = redact_model_forbidden_values(structured_profile, response)
+    schema_json = json.dumps(
+        CareerBlueprintDraft.model_json_schema(),
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+    retry_instruction = ""
+    if retry_reason:
+        retry_instruction = (
+            f"\n上一次输出未通过校验，原因是：{retry_reason}。"
+            "请只修复对应字段，仍然输出完整JSON对象；不要复述错误说明。"
+        )
     user_content = f"""
-请生成约 5000-6000 个中文字符的报告，只包含下面六个主体模块和最后的安全提醒，标题名称与顺序不得改变。各模块必须控制在规定上限内，避免重复问卷答案或展开过多生活细节：
+请根据结构化画像和补充问卷生成《我的生涯蓝图》的结构化JSON草稿。后端会负责Markdown标题、编号和安全提醒；你只负责内容，不要输出Markdown。目标是让这名学生读完后看见几种可能的未来，并知道未来半年可以从哪里开始。最终报告应约4500—5500个中文字符。{retry_instruction}
 
-一、你5—10年后的人生画像
-二、你的核心优势与风险短板
-三、人生愿景与当前路径的匹配度诊断
-四、接下来6个月，你可以做的3—5件事
-五、半年后我会问你这些问题
-六、一个值得你长期思考的问题
-安全提醒
-
-各模块写作要求：
-
-一、你5—10年后的人生画像（建议600—750字，最多850字）
-依据基本信息、5年愿景、10年愿景和价值观，概括城市、行业与岗位、生活状态和核心技能。只保留最能体现人生方向的内容，不逐项复述问卷，不展开收入、住房、家庭和爱好的琐碎细节。
-
-二、你的核心优势与风险短板（建议750—900字，最多1050字）
-结合能力自评、兴趣倾向、行动基础、现有准备、资源缺口和健康精力，提炼且仅提炼2项核心优势和2项关键风险。分别使用“核心优势：”和“风险短板：”作为加粗小标题；每组编号都从1开始。每项写清表现、成因，以及对升学、就业和长期规划的影响。不要贴固定人格标签。
-
-三、人生愿景与当前路径的匹配度诊断（建议1500—1800字，最多2000字，报告重点）
-对照学历阶段、升学/就业/出国/体制内/企业研发等路径、专业背景、学业竞争力和5—10年愿景，判断当前路径与目标城市、行业、岗位和生活安排的匹配度，明确现实偏差。
-本模块开头必须固定回应学生最大困惑，依次使用三个独立小标题：
-“你现在最大的困惑是什么？”
-“这个困惑背后的真正问题是什么？”
-“接下来可以如何验证？”
-这三段必须引用学生选择的careerConfusions，并回应mainConfusionText；如果mainConfusionText未填写，也必须根据已选困惑说明当前最需要验证的问题，不允许只泛泛鼓励。
-在“你现在最大的困惑是什么？”下面必须原文写出一句：“当前选择的困惑包括：{_list(response.careerConfusions)}。”，然后再解释含义。
-随后必须提出“Plan A：主攻路径”“Plan B：备选路径”和“Plan C：系统建议路径”。Plan A和Plan B必须沿用结构化画像给出的方向，只能补充表达和执行细节；Plan C必须跳出学生原有设定，基于系统识别的优势、兴趣、限制和风险给出第三条值得探索的路径，不能重复Plan A或Plan B。分别说明路径内容、适配依据、目标行业和城市契合度、进入难度、主要收益、机会成本和切换条件，最后给出清晰但不绝对的当前建议。
-“Plan A：主攻路径”“Plan B：备选路径”和“Plan C：系统建议路径”必须分别作为独立小标题；三组下面的编号都必须各自从1开始。
-
-四、接下来6个月，你可以做的3—5件事（建议1050—1300字，最多1450字）
-由长期愿景倒推3—5项具体行动。每项行动标题使用一级编号；该行动下的“做什么、为什么做、对Plan A的帮助、如何为Plan B预留后手、如何验证Plan C、完成标准、建议时间”使用无序列表，不得继续使用与行动标题同级的数字编号。覆盖学业、技能、项目或实习、信息调研、自我提升、健康管理中最相关的事项，不要泛泛而谈。
-
-五、半年后我会问你这些问题（建议350—450字，最多550字）
-给出5—7个可复盘的问题，覆盖行动完成度、行业岗位认知、核心困惑和Plan A/Plan B/Plan C是否需要切换。问题要能根据事实简短回答，不为每个问题附加长篇解释。
-
-六、一个值得你长期思考的问题（建议220—320字，最多380字）
-用一小段文字指出问题与学生的关系，再给出一句开放式问题。紧扣其最大困惑、理想与现实落差或双路径取舍，不重复前文。
-
-安全提醒
-固定提醒学生：报告是生涯探索参考，不是医学、心理诊断或人生定论；如持续感到焦虑、低落或无力，应联系学校心理咨询中心；升学就业的具体政策与机会应向学校就业指导中心、教务部门或官方渠道核实。
-
-格式要求：
-- 使用 Markdown 标题：报告标题用“#”，六个模块及安全提醒用“##”。
-- “你现在最大的困惑是什么？”“这个困惑背后的真正问题是什么？”“接下来可以如何验证？”和 Plan A / Plan B / Plan C 这六个指定小标题必须使用“###”；其他小标题可以使用“###”或单独一行的“**小标题：**”。只加粗标题、小标题和每条内容开头的短标签，不要加粗正文。
-- 编号只用于模块内部的并列项目。每个新的小标题或分组都从1重新开始，禁止跨模块连续编号。
-- Plan A、Plan B和Plan C是三个独立分组，各自下面的编号列表必须从1重新开始。
-- 第四模块只有3—5个行动标题使用数字编号；每项行动的说明字段必须使用“-”无序列表。
-- “安全提醒”必须单独使用“## 安全提醒”标题，不要用“***”等分隔线代替标题。
-- 不输出“质量检查”“生成说明”“字数统计”等系统信息。
-- 不复述整份问卷，不使用“你一定”“你必须”“唯一选择”等绝对表达。
-- 同一事实或建议最多出现一次；优先给出结论、依据和行动，删除铺垫、泛泛鼓励及重复解释。
-- 不分析、不预测也不评价薪资、收入区间、收入目标是否现实或购房能力；报告正文不得出现具体薪资判断。
-- 不输出直接身份信息。
-- 优先使用结构化画像中的结论、证据、反证与置信度。低置信度结论必须使用“可能”“有待验证”等表达。
-- 已验证优势和潜在优势必须严格区分；不得把potentialStrengths写成已经具备的成熟能力。
-- Plan A和Plan B必须沿用结构化画像给出的方向，只能补充表达和执行细节，不能擅自交换或另造路径。
-- Plan C优先沿用结构化画像中的planC；如果planC为空，则只能基于结构化画像的优势、兴趣、限制、风险、信息缺口和脱敏问卷生成低成本验证型建议，不得凭空创造经历或确定结论。
-- 画像中指出的信息缺口和矛盾必须转化为验证行动，不得用猜测填补。
+写作规则：
+1. 把文字写给眼前这一名学生。自然使用其城市、行业、岗位、价值排序、困惑和已有经历中的具体信息；不要把问卷答案换一种说法逐项复述，也不要写成给所有学生都适用的模板。
+2. portrait只负责展开未来生活画面，不分析学生当前情况，也不给行动建议。fiveYearPortrait用320—500字，以“五年后的……”直接进入一个可能的普通日子，围绕fiveYearCity、fiveYearIndustry、fiveYearRole、fiveYearFamilyStatus、fiveYearHousingPlan和fiveYearHobbiesSkills自然写出工作与生活；tenYearPortrait用320—500字，以“到了十年左右……”展开tenYear对应答案中的职业角色、生活状态和价值取舍。只使用问卷明确提供的信息，不虚构公司、住址、伴侣、职位级别等细节。不得出现GPA、排名、年级、当前不足、家庭分歧、求职步骤、建议、证据说明或“从现在到未来需要做什么”。
+3. strengthsAndRisks必须恰好包含2项优势和2项风险。studentNarrative用150—230字把能力或需要留意的地方放回学生的真实处境；futureRelevance用80—140字说明它会怎样影响未来选择。已被行为或成果支持的优势使用evidenceStatus=verified；仅来自自评、兴趣或称赞的优势使用potential；风险固定使用risk并在validation中写一项容易开始的尝试。evidenceStatus和validation是内部字段名，学生可见文字不要解释“验证、已验证、待验证”等系统术语。
+4. diagnosis.currentConfusion自然写出学生选择中的拉扯，必须覆盖这些困惑：{_list(response.careerConfusions)}，并具体回应mainConfusionText；underlyingProblem解释真正缺少的信息、经历或判断标准。这里不要列“第一、第二、第三”行动，不提前展开访谈、项目、简历或家庭沟通步骤。
+5. diagnosis.plans必须恰好包含id为A、B、C的三条不同路径。A和B沿用画像方向；C沿用画像planC，或在其为空时提出基于现有证据的低成本探索方向。title直接写学生可能走向的行业、岗位或发展组合，不写“主攻路径”“稳妥选择”等泛化标题。每条路径都要形成完整叙事：futureScene写这条路逐渐变清晰后可能出现的学习与工作日常；whyItFitsYou连接学生自己的经历、价值和取舍；currentGap指出眼下还可以补充的了解或能力；firstExperiment给出一项容易开始的真实尝试；decisionSignal写清看到什么结果时继续投入，出现什么情况时换一种走法。每条建议总计约500—700字，三条之间不能只替换岗位名称。
+6. pathRelationship会显示在三条路径之后，用180—300字比较Plan A、Plan B、Plan C分别承担什么作用，说明当前先关注哪条、为哪条保留基础、哪条适合低成本体验。不要重复每条路径的完整内容，不另列行动清单，也不替学生做终身决定。
+7. sixMonthActions把三条路径中的起步想法整合成3项高优先级行动；确有必要时最多5项，不能再创造一套与路径无关的任务。每项包含目的、1—4个连续步骤、可检查的完成标准和时间；validatesPlans填写这项行动实际关联的路径；pathConnection必须逐一写出它与validatesPlans中每条Plan的具体关系；reflectionSignal说明做完后观察什么事实，以及这些事实会怎样影响对应路径的优先级。行动要能产出作品、访谈记录、真实体验或外部反馈，不能只写“学习、提升、关注”。
+8. reviewQuestions提供5—7个半年后能依据事实回答的问题；longTermQuestion只保留一段与该学生的选择有关的说明和一个开放问题。
+9. 优先使用画像中的结论、经历、不同信号与置信度。同一事实或建议只出现一次；信息不够时使用“可能”“如果”“还可以再了解”等表达。先写具体处境，再给判断；长短句交替，语气像熟悉学生情况的生涯导师。
+10. 学生可见文字优先使用“试一试、去了解、先做一步、看看是否、再想一想”等日常表达，避免反复使用“验证、证据状态、切换条件、匹配度”等分析术语。内部JSON字段名不受这条限制。
+11. 避免“基于以上分析”“综合来看”“总体而言”“值得注意的是”“可以看出”“有利于提升”“进一步提升”“增强竞争力”“实现个人价值”“在未来发展中”等套话。不要连续使用相同句式，不要为了凑字数堆同义形容词或重复鼓励。
+12. 不虚构经历、院校、家庭意见或确定结论；不分析薪资、收入或购房能力；不做医学、心理或人格诊断；不输出姓名、学号、联系方式、内部ID或时间戳。
+13. 不使用“你必须”“你一定适合”“你不适合”“你肯定”“绝对”“唯一选择”“严重不足”“竞争力很弱”等表达。
+14. 所有字符串只写可直接给学生阅读的纯文本，不包含Markdown标题、列表编号或换行；只输出紧凑JSON对象，不要代码块、解释、质量检查或字数统计。
 
 问卷补充信息（仅保留困惑、基本信息和5—10年愿景；键名为问卷字段英文名，未出现的字段表示未提供）：
 {response_json}
 
 结构化画像分析（JSON；这是报告的主要依据）：
 {structured_profile}
+
+输出必须符合以下JSON Schema：
+{schema_json}
 """.strip()
     user_content = redact_model_forbidden_values(user_content, response)
 
@@ -144,9 +122,10 @@ def build_report_messages(response: AssessmentResponse, profile: CareerProfile) 
         {
             "role": "system",
             "content": (
-                "你是一名高校生涯规划顾问。依据脱敏问卷和已完成的结构化画像，"
-                "只写有证据、可执行、不过度承诺的中文《我的生涯蓝图》；不得虚构经历、"
-                "做人格/心理诊断或绕过画像重新发明结论。"
+                "你是一名熟悉高校学生处境的生涯导师和结构化写作者。依据脱敏问卷和已完成的结构化画像，"
+                "为眼前这一名学生写具体、克制、有未来画面的内容，并只输出符合Schema的JSON对象。"
+                "确保结论有证据、建议可验证、三条路径有实质差异；不得虚构经历、做人格或心理诊断，"
+                "也不得绕过画像重新发明结论。"
             ),
         },
         {

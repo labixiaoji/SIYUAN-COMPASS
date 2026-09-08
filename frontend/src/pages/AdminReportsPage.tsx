@@ -208,6 +208,7 @@ export function AdminReportsPage() {
                         <strong>{reportStatusText(record)}</strong>
                         <p>模型：{record.report.modelName || "-"}</p>
                         <p>版本：{record.report.promptVersion || "-"}</p>
+                        <p>质检：{record.report.qualityRuleVersion || "历史规则"}</p>
                         {warnings.length > 0 && (
                           <details className="admin-warning-details">
                             <summary>查看提醒内容</summary>
