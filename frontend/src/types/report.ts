@@ -27,6 +27,7 @@ export type CareerBlueprintReport = {
 };
 
 export type AdminMetrics = {
+  userCount: number;
   assessmentCount: number;
   reportSuccessCount: number;
   reportFailedCount: number;

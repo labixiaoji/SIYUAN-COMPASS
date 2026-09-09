@@ -73,6 +73,14 @@ class PostgresStorageSchemaTest(unittest.TestCase):
         self.assertIn("get_admin_generation_jobs", STORAGE_SOURCE)
         self.assertIn("get_admin_assessments", STORAGE_SOURCE)
 
+    def test_admin_can_list_and_summarize_users(self):
+        self.assertIn('/admin/users', ADMIN_API_SOURCE)
+        self.assertIn("get_admin_users", STORAGE_SOURCE)
+        self.assertIn("student_count", STORAGE_SOURCE)
+        self.assertIn("generation_job_count", STORAGE_SOURCE)
+        self.assertIn("last_activity_at", STORAGE_SOURCE)
+        self.assertIn('"userCount"', STORAGE_SOURCE)
+
     def test_admin_read_endpoints_do_not_create_audit_events(self):
         self.assertNotIn("record_admin_audit", ADMIN_API_SOURCE)
         self.assertNotIn("record_admin_audit", REPORTS_API_SOURCE)

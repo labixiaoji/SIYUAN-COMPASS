@@ -18,6 +18,7 @@ from app.storage.json_db import (
     get_admin_generation_job,
     get_admin_generation_jobs,
     get_admin_records,
+    get_admin_users,
     get_metrics,
     get_recent_reports,
     load_generation_job_recovery_draft,
@@ -27,12 +28,19 @@ from app.storage.json_db import (
 router = APIRouter(tags=["admin"])
 
 _GENERATION_JOB_STATUSES = {"all", "queued", "running", "success", "failed", "cancelled"}
+_USER_ROLES = {"all", "student", "admin"}
 
 
 def _validate_job_status(status: str) -> str:
     if status not in _GENERATION_JOB_STATUSES:
         raise HTTPException(status_code=400, detail={"error": "不支持的生成任务状态"})
     return status
+
+
+def _validate_user_role(role: str) -> str:
+    if role not in _USER_ROLES:
+        raise HTTPException(status_code=400, detail={"error": "不支持的用户角色"})
+    return role
 
 
 @router.get("/admin/metrics")
@@ -43,6 +51,18 @@ def admin_metrics(admin=Depends(require_admin)):
 @router.get("/admin/records")
 def admin_records(admin=Depends(require_admin)):
     return {"records": get_admin_records()}
+
+
+@router.get("/admin/users")
+def admin_users(
+    role: str = Query(default="all"),
+    keyword: str | None = Query(default=None, max_length=100),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    admin=Depends(require_admin),
+):
+    _validate_user_role(role)
+    return get_admin_users(role=role, keyword=keyword, limit=limit, offset=offset)
 
 
 @router.get("/admin/assessments")

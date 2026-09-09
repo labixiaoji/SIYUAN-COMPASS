@@ -74,6 +74,11 @@ export function AdminPage() {
       </div>
 
       <section className="metrics admin-metrics" aria-label="后台统计">
+        <Link className="panel stat admin-metric-link" to="/admin/users">
+          <strong>{metrics.userCount}</strong>
+          <span>注册用户</span>
+          <small>查看账号和使用情况</small>
+        </Link>
         <Link className="panel stat admin-metric-link" to="/admin/assessments">
           <strong>{metrics.assessmentCount}</strong>
           <span>填写记录</span>

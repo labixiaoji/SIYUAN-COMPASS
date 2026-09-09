@@ -2,6 +2,7 @@ import { NavLink } from "react-router-dom";
 
 const links = [
   { to: "/admin", label: "总览", end: true },
+  { to: "/admin/users", label: "用户管理" },
   { to: "/admin/assessments", label: "填写记录" },
   { to: "/admin/reports", label: "已生成报告" },
   { to: "/admin/audit-logs", label: "报告修改记录" }

@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { AdminNavigation } from "./AdminNavigation";
 
 describe("AdminNavigation", () => {
-  it("只保留填写记录、已生成报告和报告修改记录入口", () => {
+  it("提供总览、用户、填写记录、报告和修改记录入口", () => {
     render(
       <MemoryRouter initialEntries={["/admin"]}>
         <AdminNavigation />
@@ -12,6 +12,7 @@ describe("AdminNavigation", () => {
     );
 
     expect(screen.getByRole("link", { name: "总览" })).toHaveAttribute("href", "/admin");
+    expect(screen.getByRole("link", { name: "用户管理" })).toHaveAttribute("href", "/admin/users");
     expect(screen.getByRole("link", { name: "填写记录" })).toHaveAttribute("href", "/admin/assessments");
     expect(screen.getByRole("link", { name: "已生成报告" })).toHaveAttribute("href", "/admin/reports");
     expect(screen.getByRole("link", { name: "报告修改记录" })).toHaveAttribute("href", "/admin/audit-logs");

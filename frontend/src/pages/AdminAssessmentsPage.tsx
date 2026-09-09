@@ -62,11 +62,15 @@ function initialStatusFromUrl(searchParams: URLSearchParams) {
   return validStatuses.includes(value) ? value : "all";
 }
 
+function initialKeywordFromUrl(searchParams: URLSearchParams) {
+  return (searchParams.get("keyword") || "").slice(0, 100);
+}
+
 export function AdminAssessmentsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [items, setItems] = useState<AdminAssessmentRecord[]>([]);
   const [total, setTotal] = useState(0);
-  const [keyword, setKeyword] = useState("");
+  const [keyword, setKeyword] = useState(() => initialKeywordFromUrl(searchParams));
   const [status, setStatus] = useState(() => initialStatusFromUrl(searchParams));
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
@@ -97,15 +101,24 @@ export function AdminAssessmentsPage() {
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
+  function updateUrl(nextKeyword: string, nextStatus: string) {
+    const nextParams = new URLSearchParams();
+    const normalizedKeyword = nextKeyword.trim();
+    if (normalizedKeyword) nextParams.set("keyword", normalizedKeyword);
+    if (nextStatus !== "all") nextParams.set("status", nextStatus);
+    setSearchParams(nextParams);
+  }
+
   function updateKeyword(value: string) {
     setKeyword(value);
     setPage(1);
+    updateUrl(value, status);
   }
 
   function updateStatus(value: string) {
     setStatus(value);
     setPage(1);
-    setSearchParams(value === "all" ? {} : { status: value });
+    updateUrl(keyword, value);
   }
 
   return (
@@ -119,7 +132,12 @@ export function AdminAssessmentsPage() {
         <div className="admin-record-filters">
           <label className="admin-filter-keyword">
             <span>搜索</span>
-            <input value={keyword} onChange={(event) => updateKeyword(event.target.value)} placeholder="姓名、账号、专业或记录编号" />
+            <input
+              maxLength={100}
+              value={keyword}
+              onChange={(event) => updateKeyword(event.target.value)}
+              placeholder="姓名、账号、专业或记录编号"
+            />
           </label>
           <label>
             <span>记录状态</span>

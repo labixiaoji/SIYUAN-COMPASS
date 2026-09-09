@@ -1988,11 +1988,105 @@ def get_admin_assessments(
     return {"total": int(total_row["total"]), "items": items}
 
 
+def get_admin_users(
+    *,
+    role: str = "all",
+    keyword: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> dict[str, Any]:
+    clauses = ["1 = 1"]
+    params: list[Any] = []
+    if role and role != "all":
+        clauses.append("users.role = %s")
+        params.append(role)
+    if keyword and keyword.strip():
+        pattern = f"%{keyword.strip()}%"
+        clauses.append(
+            "("
+            "users.id ILIKE %s "
+            "OR COALESCE(users.username, '') ILIKE %s "
+            "OR COALESCE(users.display_name, '') ILIKE %s"
+            ")"
+        )
+        params.extend([pattern] * 3)
+    where_sql = " AND ".join(clauses)
+
+    with _connect() as connection:
+        summary = connection.execute(
+            """
+            SELECT
+                COUNT(*) AS total,
+                COUNT(*) FILTER (WHERE role = 'student') AS student_count,
+                COUNT(*) FILTER (WHERE role = 'admin') AS admin_count
+            FROM users
+            """
+        ).fetchone()
+        total_row = connection.execute(
+            f"""
+            SELECT COUNT(*) AS total
+            FROM users
+            WHERE {where_sql}
+            """,
+            params,
+        ).fetchone()
+        rows = connection.execute(
+            f"""
+            SELECT
+                users.id,
+                users.username,
+                users.display_name,
+                users.role,
+                users.created_at,
+                users.updated_at,
+                (SELECT COUNT(*) FROM assessment_responses WHERE user_id = users.id) AS assessment_count,
+                (SELECT COUNT(*) FROM generation_jobs WHERE user_id = users.id) AS generation_job_count,
+                (SELECT COUNT(*) FROM reports WHERE user_id = users.id) AS report_count,
+                GREATEST(
+                    users.updated_at::timestamptz,
+                    (SELECT MAX(submitted_at::timestamptz) FROM assessment_responses WHERE user_id = users.id),
+                    (SELECT MAX(updated_at) FROM generation_jobs WHERE user_id = users.id),
+                    (SELECT MAX(updated_at::timestamptz) FROM reports WHERE user_id = users.id)
+                )::text AS last_activity_at
+            FROM users
+            WHERE {where_sql}
+            ORDER BY users.created_at DESC, users.id
+            LIMIT %s OFFSET %s
+            """,
+            [*params, max(limit, 1), max(offset, 0)],
+        ).fetchall()
+
+    return {
+        "summary": {
+            "total": int(summary["total"]),
+            "studentCount": int(summary["student_count"]),
+            "adminCount": int(summary["admin_count"]),
+        },
+        "total": int(total_row["total"]),
+        "items": [
+            {
+                "id": row["id"],
+                "username": row["username"] or "未设置账号",
+                "displayName": row["display_name"] or row["username"] or "未命名用户",
+                "role": row["role"],
+                "createdAt": _iso_timestamp(row["created_at"]),
+                "updatedAt": _iso_timestamp(row["updated_at"]),
+                "lastActivityAt": _iso_timestamp(row["last_activity_at"]),
+                "assessmentCount": int(row["assessment_count"]),
+                "generationJobCount": int(row["generation_job_count"]),
+                "reportCount": int(row["report_count"]),
+            }
+            for row in rows
+        ],
+    }
+
+
 def get_metrics() -> dict[str, Any]:
     with _connect() as connection:
         metrics = connection.execute(
             """
             SELECT
+                (SELECT COUNT(*) FROM users) AS user_count,
                 (
                     (SELECT COUNT(*) FROM assessment_responses)
                     + (
@@ -2036,6 +2130,7 @@ def get_metrics() -> dict[str, Any]:
         ).fetchall()
 
     return {
+        "userCount": metrics["user_count"],
         "assessmentCount": metrics["assessment_count"],
         "reportSuccessCount": metrics["report_success_count"],
         "reportFailedCount": metrics["report_failed_count"],

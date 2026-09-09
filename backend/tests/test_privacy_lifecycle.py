@@ -456,6 +456,42 @@ class AdminAuditTest(TestCase):
             offset=0,
         )
 
+    @patch.object(admin, "get_admin_users", return_value={
+        "summary": {"total": 2, "studentCount": 1, "adminCount": 1},
+        "total": 2,
+        "items": [],
+    })
+    def test_admin_user_list_is_read_only_and_filtered(self, get_users):
+        result = admin.admin_users(
+            role="student",
+            keyword="test",
+            limit=20,
+            offset=0,
+            admin={"id": "admin-1", "role": "admin"},
+        )
+
+        self.assertEqual(result["summary"]["total"], 2)
+        get_users.assert_called_once_with(
+            role="student",
+            keyword="test",
+            limit=20,
+            offset=0,
+        )
+
+    @patch.object(admin, "get_admin_users")
+    def test_admin_user_list_rejects_unknown_role(self, get_users):
+        with self.assertRaises(HTTPException) as raised:
+            admin.admin_users(
+                role="owner",
+                keyword=None,
+                limit=20,
+                offset=0,
+                admin={"id": "admin-1", "role": "admin"},
+            )
+
+        self.assertEqual(raised.exception.status_code, 400)
+        get_users.assert_not_called()
+
     @patch.object(admin, "load_generation_job_recovery_draft", return_value={
         "jobId": "job-1",
         "answers": {"collegeMajor": "计算机"},

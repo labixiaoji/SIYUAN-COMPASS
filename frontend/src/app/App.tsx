@@ -11,6 +11,7 @@ import { AdminLayout } from "../pages/AdminLayout";
 import { AdminPage } from "../pages/AdminPage";
 import { AdminReportsPage } from "../pages/AdminReportsPage";
 import { AdminReportEditPage } from "../pages/AdminReportEditPage";
+import { AdminUsersPage } from "../pages/AdminUsersPage";
 import { AssessmentPage } from "../pages/AssessmentPage";
 import { FeedbackPage } from "../pages/FeedbackPage";
 import { HomePage } from "../pages/HomePage";
@@ -60,6 +61,7 @@ export function App() {
           <Route path="/reports/:reportId" element={<ProtectedRoute><ReportPage /></ProtectedRoute>} />
           <Route path="/reports/:reportId/feedback" element={<ProtectedRoute role="student"><FeedbackPage /></ProtectedRoute>} />
           <Route path="/admin" element={<ProtectedRoute role="admin"><AdminLayout><AdminPage /></AdminLayout></ProtectedRoute>} />
+          <Route path="/admin/users" element={<ProtectedRoute role="admin"><AdminLayout><AdminUsersPage /></AdminLayout></ProtectedRoute>} />
           <Route path="/admin/assessments" element={<ProtectedRoute role="admin"><AdminLayout><AdminAssessmentsPage /></AdminLayout></ProtectedRoute>} />
           <Route path="/admin/assessments/:responseId" element={<ProtectedRoute role="admin"><AdminLayout><AdminAssessmentPage /></AdminLayout></ProtectedRoute>} />
           <Route path="/admin/generation-jobs" element={<ProtectedRoute role="admin"><GenerationJobsRedirect /></ProtectedRoute>} />

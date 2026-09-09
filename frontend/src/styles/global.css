@@ -710,6 +710,10 @@ select {
   transition: border-color 120ms ease, box-shadow 120ms ease, transform 120ms ease;
 }
 
+.admin-metrics {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .admin-metric-link:hover,
 .admin-metric-link:focus-visible {
   border-color: var(--accent-line);
@@ -810,6 +814,52 @@ select {
 
 .admin-assessment-table {
   min-width: 1180px !important;
+}
+
+.user-summary-metrics {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-bottom: 24px;
+}
+
+.user-summary-metrics .stat {
+  padding: 18px;
+}
+
+.admin-users-panel .admin-section-head {
+  margin-bottom: 16px;
+}
+
+.admin-users-table {
+  min-width: 960px !important;
+}
+
+.admin-role-pill {
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-line);
+  border-radius: 999px;
+  color: var(--accent-dark) !important;
+  display: inline-block !important;
+  font-weight: 800;
+  margin-top: 0 !important;
+  padding: 4px 9px;
+}
+
+.admin-role-pill.admin {
+  background: var(--warn-soft);
+  border-color: var(--warn-line);
+  color: var(--warn-ink) !important;
+}
+
+.admin-user-link {
+  color: var(--accent);
+  display: inline-block;
+  font-weight: 800;
+}
+
+.admin-user-link:hover,
+.admin-user-link:focus-visible {
+  color: var(--accent-dark);
+  text-decoration: underline;
 }
 
 .admin-progress-track {
@@ -2069,6 +2119,10 @@ select {
   }
 
   .admin-record-filters {
+    grid-template-columns: 1fr;
+  }
+
+  .user-summary-metrics {
     grid-template-columns: 1fr;
   }
 
