@@ -41,7 +41,8 @@ def _analysis_item(index: int, item: ReportAnalysisItem, *, include_validation: 
     ]
     if include_validation:
         lines.append(f"  - 如果暂时不处理：{_inline(item.futureRelevance)}")
-        lines.append(f"  - 可以先做：{_inline(item.validation)}")
+        if item.validation:
+            lines.append(f"  - 可以先做：{_inline(item.validation)}")
     else:
         lines.append(f"  - 以后可能会用在：{_inline(item.futureRelevance)}")
     return lines
@@ -105,6 +106,7 @@ def render_report_markdown(draft: CareerBlueprintDraft) -> str:
 
     lines.extend(["", "## 四、接下来6个月，你可以做的3—5件事"])
     for index, action in enumerate(draft.sixMonthActions, 1):
+        related_plans = "、".join(f"Plan {plan_id}" for plan_id in action.validatesPlans)
         lines.extend(
             [
                 "",
@@ -113,7 +115,7 @@ def render_report_markdown(draft: CareerBlueprintDraft) -> str:
                 f"  - 这一步为什么重要：{_inline(action.purpose)}",
                 f"  - 做到什么算完成：{_inline(action.completionCriteria)}",
                 f"  - 适合什么时候做：{_inline(action.deadline)}",
-                f"  - 它和未来方向的关系：{_inline(action.pathConnection)}",
+                f"  - 它和未来方向的关系（{related_plans}）：{_inline(action.pathConnection)}",
                 f"  - 做完后重点看看：{_inline(action.reflectionSignal)}",
             ]
         )

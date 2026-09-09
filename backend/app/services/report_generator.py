@@ -25,7 +25,7 @@ from app.services.report_quality_check import (
 )
 from app.services.report_renderer import render_report_markdown
 
-REPORT_PROMPT_VERSION = "career-blueprint-v2.5.0"
+REPORT_PROMPT_VERSION = "career-blueprint-v2.6.0"
 
 
 class ReportGenerationError(RuntimeError):
@@ -99,7 +99,7 @@ async def generate_report(
             if attempt == 0:
                 progress_callback("report_generating", 65, "正在生成结构化六模块三路径报告草稿。")
             else:
-                progress_callback("report_retrying", 82, "结构化报告未通过校验，正在定向修复字段。")
+                progress_callback("report_retrying", 82, "报告初稿未通过必要检查，正在补充完整内容。")
         try:
             call_kwargs: dict[str, Any] = {
                 "temperature": 0.2,
@@ -136,24 +136,8 @@ async def generate_report(
                 ),
                 finish_reason=result.get("finishReason"),
             )
-            repair_warnings = [
-                warning
-                for warning in quality["warnings"]
-                if warning.startswith(
-                    (
-                        "报告长度不足",
-                        "报告长度超过",
-                        "出现模板化表达",
-                        "学生可见文字反复使用生硬术语",
-                        "人生画像",
-                    )
-                )
-            ]
-            if quality["status"] == "failed" or (attempt == 0 and repair_warnings):
-                if quality["status"] == "failed":
-                    reasons = quality.get("fatalWarnings") or quality["warnings"]
-                else:
-                    reasons = repair_warnings
+            if quality["status"] == "failed":
+                reasons = quality.get("fatalWarnings") or quality["warnings"]
                 raise ReportGenerationError(f"报告内容质量校验失败：{'；'.join(reasons)}")
             retry_count = attempt
             break

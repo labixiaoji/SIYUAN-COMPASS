@@ -162,6 +162,16 @@ class ReportQualityCheckTest(unittest.TestCase):
             any(item.startswith("学生可见文字反复使用生硬术语：验证") for item in quality["warnings"])
         )
 
+    def test_a_few_validation_terms_do_not_create_a_style_warning(self):
+        content = make_report().replace("验证", "尝试")
+        content += "\n验证、验证、验证、验证"
+
+        quality = check_report_quality(content)
+
+        self.assertFalse(
+            any(item.startswith("学生可见文字反复使用生硬术语：验证") for item in quality["warnings"])
+        )
+
     def test_portrait_action_advice_is_flagged_for_rewrite(self):
         content = make_report().replace(
             "## 二、你的核心优势与风险短板",

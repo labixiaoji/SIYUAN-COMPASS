@@ -7,7 +7,7 @@ from typing import Literal
 
 from app.core.data_privacy import contains_obvious_contact_details
 
-REPORT_QUALITY_VERSION = "report-quality-v2.5.0"
+REPORT_QUALITY_VERSION = "report-quality-v2.6.0"
 
 REQUIRED_SECTIONS = [
     "一、你5—10年后的人生画像",
@@ -42,7 +42,7 @@ TEMPLATE_PHRASES = [
     "实现个人价值",
     "在未来发展中",
 ]
-STUDENT_FACING_TERM_LIMITS = {"验证": 2}
+STUDENT_FACING_TERM_LIMITS = {"验证": 4}
 PORTRAIT_ANALYSIS_PHRASES = (
     "你现在需要",
     "你需要做",
@@ -61,11 +61,11 @@ PORTRAIT_ANALYSIS_PHRASES = (
 )
 SECTION_MAX_LENGTHS = {
     "一、你5—10年后的人生画像": 1200,
-    "二、你的优势，以及还可以继续积累的地方": 1600,
-    "三、从现在走向未来，可以怎样选择": 2800,
-    "四、接下来6个月，你可以做的3—5件事": 1500,
-    "五、半年后我会问你这些问题": 650,
-    "六、一个值得你长期思考的问题": 500,
+    "二、你的优势，以及还可以继续积累的地方": 2000,
+    "三、从现在走向未来，可以怎样选择": 3400,
+    "四、接下来6个月，你可以做的3—5件事": 2200,
+    "五、半年后我会问你这些问题": 900,
+    "六、一个值得你长期思考的问题": 700,
 }
 SECTION_MIN_LENGTHS = {
     "一、你5—10年后的人生画像": 500,
@@ -76,8 +76,8 @@ SECTION_MIN_LENGTHS = {
     "六、一个值得你长期思考的问题": 80,
 }
 MIN_REPORT_LENGTH = 2500
-RECOMMENDED_REPORT_MIN_LENGTH = 4000
-RECOMMENDED_REPORT_MAX_LENGTH = 6000
+RECOMMENDED_REPORT_MIN_LENGTH = 3500
+RECOMMENDED_REPORT_MAX_LENGTH = 7000
 PLAN_TITLES = ("Plan A", "Plan B", "Plan C")
 STRUCTURED_SUBHEADINGS = (
     *PLAN_TITLES,
@@ -240,7 +240,7 @@ def _plan_warnings(content: str) -> list[str]:
             if left not in compact_bodies or right not in compact_bodies:
                 continue
             similarity = SequenceMatcher(None, compact_bodies[left], compact_bodies[right]).ratio()
-            if similarity >= 0.78:
+            if similarity >= 0.9:
                 warnings.append(f"路径内容高度重复：{left} 与 {right}")
     return warnings
 

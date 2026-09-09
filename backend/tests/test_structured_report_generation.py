@@ -160,19 +160,44 @@ class StructuredReportGenerationTest(unittest.TestCase):
         with self.assertRaises(ValidationError):
             CareerBlueprintDraft.model_validate(payload)
 
-    def test_action_explains_its_connection_to_every_related_plan(self):
+    def test_action_connection_does_not_need_to_repeat_internal_plan_labels(self):
         payload = make_draft_payload()
-        payload["sixMonthActions"][0]["pathConnection"] = "这次访谈只说明它与Plan A的关系，没有说明另一条方向。"
+        payload["sixMonthActions"][0]["pathConnection"] = "这次访谈可以同时比较主攻方向和专业备选方向的真实工作内容。"
 
-        with self.assertRaises(ValidationError):
-            CareerBlueprintDraft.model_validate(payload)
+        draft = CareerBlueprintDraft.model_validate(payload)
+        markdown = render_report_markdown(draft)
 
-    def test_six_month_actions_collectively_cover_all_plans(self):
+        self.assertIn("它和未来方向的关系（Plan A、Plan B）", markdown)
+
+    def test_six_month_actions_can_focus_on_current_priority_paths(self):
         payload = make_draft_payload()
         payload["sixMonthActions"][2]["validatesPlans"] = ["A", "B"]
+        payload["sixMonthActions"][2]["pathConnection"] = "这次复盘会把主攻方向和专业备选方向放在同一组事实下比较。"
 
-        with self.assertRaises(ValidationError):
-            CareerBlueprintDraft.model_validate(payload)
+        draft = CareerBlueprintDraft.model_validate(payload)
+
+        self.assertEqual(draft.sixMonthActions[2].validatesPlans, ["A", "B"])
+
+    def test_draft_accepts_four_relevant_evidence_items(self):
+        payload = make_draft_payload()
+        payload["strengthsAndRisks"]["strengths"][0]["evidence"] = [
+            "课程项目按期完成",
+            "主动整理资料",
+            "小组汇报表达清楚",
+            "会复盘项目过程",
+        ]
+
+        draft = CareerBlueprintDraft.model_validate(payload)
+
+        self.assertEqual(len(draft.strengthsAndRisks.strengths[0].evidence), 4)
+
+    def test_risk_item_can_omit_repeated_action_advice(self):
+        payload = make_draft_payload()
+        payload["strengthsAndRisks"]["risks"][0]["validation"] = ""
+
+        markdown = render_report_markdown(CareerBlueprintDraft.model_validate(payload))
+
+        self.assertEqual(markdown.count("  - 可以先做："), 1)
 
     def test_parser_accepts_fenced_json_and_renderer_creates_canonical_markdown(self):
         payload = make_draft_payload()
@@ -201,7 +226,10 @@ class StructuredReportGenerationTest(unittest.TestCase):
         self.assertIn("\n  - 你已经在课程项目里表现出", markdown)
         self.assertIn("\n  - 你已经做过的事：", markdown)
         self.assertIn("\n  - 可以从这些步骤开始：", markdown)
-        self.assertIn("- 它和未来方向的关系：这次访谈主要帮助你了解Plan A", markdown)
+        self.assertIn(
+            "- 它和未来方向的关系（Plan A、Plan B）：这次访谈主要帮助你了解Plan A",
+            markdown,
+        )
         self.assertIn("- 做完后重点看看：重点看看哪类工作内容", markdown)
         self.assertFalse(any("缺少模块" in item for item in quality["warnings"]))
         self.assertFalse(any("缺少关键内容" in item for item in quality["warnings"]))

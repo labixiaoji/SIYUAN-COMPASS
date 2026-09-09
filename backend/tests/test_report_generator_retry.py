@@ -27,10 +27,9 @@ FAILED_QUALITY = {
 }
 LENGTH_WARNING_QUALITY = {
     "status": "warning",
-    "warnings": ["报告长度不足 4000 字符建议下限：3200"],
+    "warnings": ["报告长度不足 3500 字符建议下限：3200"],
     "fatalWarnings": [],
 }
-PASSED_QUALITY = {"status": "passed", "warnings": [], "fatalWarnings": []}
 
 
 class ReportGeneratorRetryTest(unittest.TestCase):
@@ -54,12 +53,12 @@ class ReportGeneratorRetryTest(unittest.TestCase):
 
         self.assertIn("### Plan A：连接技术与真实需求的产品方向（主攻路径）", report.content)
         self.assertEqual(report.retryCount, 1)
-        self.assertEqual(report.qualityRuleVersion, "report-quality-v2.5.0")
+        self.assertEqual(report.qualityRuleVersion, "report-quality-v2.6.0")
         self.assertEqual(completion.await_count, 2)
         self.assertTrue(completion.await_args_list[1].kwargs["json_mode"])
         self.assertIn("JSON无法解析", build_messages.call_args_list[1].args[2])
 
-    def test_short_but_valid_first_draft_is_expanded_once(self) -> None:
+    def test_nonfatal_quality_warning_does_not_regenerate_report(self) -> None:
         valid_json = json.dumps(make_draft_payload(), ensure_ascii=False)
         completion = AsyncMock(
             return_value={"content": valid_json, "modelName": "test-model", "finishReason": "stop"}
@@ -73,14 +72,15 @@ class ReportGeneratorRetryTest(unittest.TestCase):
             patch("app.services.report_generator.create_chat_completion", completion),
             patch(
                 "app.services.report_generator.check_report_quality",
-                side_effect=[LENGTH_WARNING_QUALITY, PASSED_QUALITY],
+                return_value=LENGTH_WARNING_QUALITY,
             ),
         ):
             report = asyncio.run(generate_report(_response(), SimpleNamespace(id="profile-1")))
 
-        self.assertEqual(report.retryCount, 1)
-        self.assertEqual(completion.await_count, 2)
-        self.assertIn("报告长度不足", build_messages.call_args_list[1].args[2])
+        self.assertEqual(report.retryCount, 0)
+        self.assertEqual(report.qualityStatus, "warning")
+        self.assertEqual(completion.await_count, 1)
+        self.assertEqual(build_messages.call_count, 1)
 
     def test_second_quality_failure_stops_without_saving_report(self) -> None:
         valid_json = json.dumps(make_draft_payload(), ensure_ascii=False)

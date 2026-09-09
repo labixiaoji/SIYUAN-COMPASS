@@ -23,7 +23,7 @@ class ReportAnalysisItem(_ReportDraftModel):
     title: str = Field(min_length=1, max_length=40)
     evidenceStatus: Literal["verified", "potential", "risk"]
     studentNarrative: str = Field(min_length=30, max_length=450)
-    evidence: list[ListItemText] = Field(min_length=1, max_length=3)
+    evidence: list[ListItemText] = Field(min_length=1, max_length=4)
     futureRelevance: str = Field(min_length=20, max_length=350)
     validation: str = Field(default="", max_length=300)
 
@@ -38,8 +38,6 @@ class ReportStrengthsAndRisks(_ReportDraftModel):
             raise ValueError("优势的 evidenceStatus 只能是 verified 或 potential")
         if any(item.evidenceStatus != "risk" for item in self.risks):
             raise ValueError("风险的 evidenceStatus 必须是 risk")
-        if any(not item.validation.strip() for item in self.risks):
-            raise ValueError("每项风险必须包含验证或改善行动")
         return self
 
 
@@ -79,7 +77,7 @@ class ReportAction(_ReportDraftModel):
     completionCriteria: str = Field(min_length=1, max_length=300)
     deadline: str = Field(min_length=1, max_length=80)
     validatesPlans: list[PlanId] = Field(min_length=1, max_length=3)
-    pathConnection: str = Field(min_length=30, max_length=400)
+    pathConnection: str = Field(min_length=15, max_length=400)
     reflectionSignal: str = Field(min_length=20, max_length=300)
 
     @field_validator("validatesPlans", mode="before")
@@ -93,13 +91,6 @@ class ReportAction(_ReportDraftModel):
     def require_distinct_plan_ids(self):
         if len(set(self.validatesPlans)) != len(self.validatesPlans):
             raise ValueError("validatesPlans 不能包含重复路径")
-        missing = [
-            plan_id
-            for plan_id in self.validatesPlans
-            if f"Plan {plan_id}" not in self.pathConnection
-        ]
-        if missing:
-            raise ValueError(f"pathConnection 必须说明这些路径的关系：{', '.join(missing)}")
         return self
 
 
@@ -122,19 +113,6 @@ class CareerBlueprintDraft(_ReportDraftModel):
         if len(normalized) != len(self.reviewQuestions):
             raise ValueError("reviewQuestions 不能包含重复问题")
         return self
-
-    @model_validator(mode="after")
-    def require_action_coverage_for_all_plans(self):
-        covered_plans = {
-            plan_id
-            for action in self.sixMonthActions
-            for plan_id in action.validatesPlans
-        }
-        if covered_plans != {"A", "B", "C"}:
-            missing = sorted({"A", "B", "C"} - covered_plans)
-            raise ValueError(f"六个月行动必须覆盖所有路径，缺少：{', '.join(missing)}")
-        return self
-
 
 class CareerBlueprintReport(BaseModel):
     id: str
