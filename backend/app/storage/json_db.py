@@ -51,8 +51,6 @@ CREATE TABLE IF NOT EXISTS users (
     role TEXT NOT NULL DEFAULT 'student',
     generation_quota_day DATE,
     generation_quota_used INTEGER NOT NULL DEFAULT 0,
-    speech_quota_day DATE,
-    speech_quota_used INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
@@ -64,9 +62,9 @@ ALTER TABLE users
 ALTER TABLE users
     ADD COLUMN IF NOT EXISTS generation_quota_used INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE users
-    ADD COLUMN IF NOT EXISTS speech_quota_day DATE;
+    DROP COLUMN IF EXISTS speech_quota_day;
 ALTER TABLE users
-    ADD COLUMN IF NOT EXISTS speech_quota_used INTEGER NOT NULL DEFAULT 0;
+    DROP COLUMN IF EXISTS speech_quota_used;
 
 CREATE TABLE IF NOT EXISTS assessment_responses (
     id TEXT PRIMARY KEY,
@@ -219,6 +217,12 @@ CREATE INDEX IF NOT EXISTS idx_generation_jobs_user_status_updated_at
     ON generation_jobs(user_id, status, updated_at);
 CREATE INDEX IF NOT EXISTS idx_generation_jobs_user_created_at
     ON generation_jobs(user_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_generation_jobs_queue_created_at
+    ON generation_jobs(created_at, job_id)
+    WHERE status = 'queued';
+CREATE INDEX IF NOT EXISTS idx_generation_jobs_expired_lease
+    ON generation_jobs(lease_expires_at, created_at, job_id)
+    WHERE status = 'running';
 """
 
 
@@ -227,13 +231,6 @@ class GenerationQuotaStorageError(RuntimeError):
         self.limit = limit
         self.used = used
         super().__init__(f"当日报告生成次数已达上限（{used}/{limit}）")
-
-
-class SpeechQuotaStorageError(RuntimeError):
-    def __init__(self, *, limit: int, used: int) -> None:
-        self.limit = limit
-        self.used = used
-        super().__init__(f"当日语音转写次数已达上限（{used}/{limit}）")
 
 
 class AssessmentDraftConflictError(RuntimeError):
@@ -936,7 +933,11 @@ def find_report(report_id: str) -> CareerBlueprintReport | None:
     with _connect() as connection:
         row = connection.execute(
             """
-            SELECT reports.data, users.display_name
+            SELECT reports.data,
+                   reports.user_id,
+                   reports.response_id,
+                   reports.profile_id,
+                   users.display_name
             FROM reports
             LEFT JOIN users ON users.id = reports.user_id
             WHERE reports.id = %s
@@ -947,6 +948,9 @@ def find_report(report_id: str) -> CareerBlueprintReport | None:
         return None
 
     record = dict(row["data"])
+    record["userId"] = str(row["user_id"])
+    record["responseId"] = str(row["response_id"])
+    record["profileId"] = str(row["profile_id"])
     response = find_response(record["responseId"])
     profile = find_profile(record["profileId"])
     record["inputSnapshot"] = {
@@ -960,7 +964,7 @@ def find_report(report_id: str) -> CareerBlueprintReport | None:
 def find_response(response_id: str) -> AssessmentResponse | None:
     with _connect() as connection:
         response_row = connection.execute(
-            "SELECT data FROM assessment_responses WHERE id = %s",
+            "SELECT data, user_id FROM assessment_responses WHERE id = %s",
             (response_id,),
         ).fetchone()
         score_row = connection.execute(
@@ -981,6 +985,7 @@ def find_response(response_id: str) -> AssessmentResponse | None:
         return None
 
     payload = dict(response_row["data"])
+    payload["userId"] = str(response_row["user_id"])
     payload["abilityScores"] = score_row["ability_scores"]
     payload["interestScores"] = score_row["interest_scores"]
     for question_code in ASSESSMENT_LIST_FIELDS:
@@ -998,13 +1003,29 @@ def find_response(response_id: str) -> AssessmentResponse | None:
     return AssessmentResponse.model_validate(payload)
 
 
+def find_response_owner(response_id: str) -> str | None:
+    """Return the relational owner even when a legacy response is incomplete."""
+
+    with _connect() as connection:
+        row = connection.execute(
+            "SELECT user_id FROM assessment_responses WHERE id = %s",
+            (response_id,),
+        ).fetchone()
+    return str(row["user_id"]) if row and row["user_id"] is not None else None
+
+
 def find_profile(profile_id: str) -> CareerProfile | None:
     with _connect() as connection:
         row = connection.execute(
-            "SELECT data FROM career_profiles WHERE id = %s",
+            "SELECT data, user_id, response_id FROM career_profiles WHERE id = %s",
             (profile_id,),
         ).fetchone()
-    return CareerProfile.model_validate(row["data"]) if row else None
+    if not row:
+        return None
+    payload = dict(row["data"])
+    payload["userId"] = str(row["user_id"])
+    payload["responseId"] = str(row["response_id"])
+    return CareerProfile.model_validate(payload)
 
 
 def update_profile(profile: CareerProfile) -> None:
@@ -1057,11 +1078,18 @@ def update_report(report: CareerBlueprintReport) -> None:
     record = _report_storage_record(report)
     with _connect() as connection:
         previous = connection.execute(
-            "SELECT title FROM reports WHERE id = %s",
+            "SELECT title, data FROM reports WHERE id = %s",
             (report.id,),
         ).fetchone()
         if not previous:
             return
+
+        previous_data = dict(previous["data"] or {})
+        changed_fields: list[str] = []
+        if (previous["title"] or "") != report.title:
+            changed_fields.append("title")
+        if previous_data.get("content", "") != report.content:
+            changed_fields.append("content")
 
         connection.execute(
             """
@@ -1089,7 +1117,7 @@ def update_report(report: CareerBlueprintReport) -> None:
         source = "admin_edit" if report.editedBy else "ai_regenerated"
         _save_report_version(connection, report, source)
 
-        if report.editedBy:
+        if report.editedBy and changed_fields:
             _insert_admin_audit(
                 connection,
                 admin_id=report.editedBy,
@@ -1098,8 +1126,9 @@ def update_report(report: CareerBlueprintReport) -> None:
                 target_id=report.id,
                 created_at=report.updatedAt,
                 details={
-                    "changedFields": ["title", "content"],
+                    "changedFields": changed_fields,
                     "qualityStatus": report.qualityStatus,
+                    "wordCount": report.wordCount,
                 },
             )
 
@@ -1141,6 +1170,10 @@ def _generation_job_from_row(row: dict[str, Any] | None) -> GenerationJobStatus 
     if not row:
         return None
     record = dict(row["data"])
+    if "user_id" in row:
+        # Relational ownership is authoritative; never trust a legacy/tampered
+        # userId embedded in the public JSON snapshot.
+        record["userId"] = str(row["user_id"]) if row["user_id"] is not None else None
     created_at = _iso_timestamp(row.get("created_at"))
     updated_at = _iso_timestamp(row.get("updated_at"))
     record.setdefault("createdAt", created_at or updated_at)
@@ -1216,7 +1249,8 @@ def save_generation_job_if_user_idle(
         ).fetchone()
         active_row = connection.execute(
             """
-            SELECT data, created_at, updated_at, input_data IS NOT NULL AS draft_available
+            SELECT data, user_id, created_at, updated_at,
+                   input_data IS NOT NULL AS draft_available
             FROM generation_jobs
             WHERE user_id = %s
               AND status IN ('queued', 'running')
@@ -1417,9 +1451,13 @@ def claim_generation_job(
                 lease_expires_at = now() + (%s * interval '1 second'),
                 updated_at = now(),
                 data = jsonb_set(
-                    data || %s,
-                    '{attempts}',
-                    to_jsonb(COALESCE((data->>'attempts')::integer, 0) + 1)
+                    jsonb_set(
+                        data || %s,
+                        '{attempts}',
+                        to_jsonb(COALESCE((data->>'attempts')::integer, 0) + 1)
+                    ),
+                    '{workerAttempts}',
+                    to_jsonb(COALESCE((data->>'workerAttempts')::integer, 0) + 1)
                 )
             WHERE job_id = %s
               AND (
@@ -1429,10 +1467,65 @@ def claim_generation_job(
                       AND (lease_expires_at IS NULL OR lease_expires_at <= now())
                   )
               )
-            RETURNING data, created_at, updated_at,
+            RETURNING data, user_id, created_at, updated_at,
                       input_data IS NOT NULL AS draft_available
             """,
             (claim_token, max(lease_seconds, 1), Jsonb(updates), job_id),
+        ).fetchone()
+    return _generation_job_from_row(row)
+
+
+def claim_next_generation_job(
+    *,
+    claim_token: str,
+    lease_seconds: int,
+) -> GenerationJobStatus | None:
+    """Atomically claim the oldest queued or expired job for one worker."""
+
+    updates = {
+        "status": "running",
+        "stage": "preparing",
+        "progress": 10,
+        "message": "正在整理问卷答案和生成任务。",
+        "error": None,
+        "failure": None,
+    }
+    with _connect() as connection:
+        row = connection.execute(
+            """
+            WITH candidate AS (
+                SELECT job_id
+                FROM generation_jobs
+                WHERE status = 'queued'
+                   OR (
+                       status = 'running'
+                       AND (lease_expires_at IS NULL OR lease_expires_at <= now())
+                   )
+                ORDER BY created_at, job_id
+                FOR UPDATE SKIP LOCKED
+                LIMIT 1
+            )
+            UPDATE generation_jobs AS jobs
+            SET status = 'running',
+                stage = 'preparing',
+                claim_token = %s,
+                lease_expires_at = now() + (%s * interval '1 second'),
+                updated_at = now(),
+                data = jsonb_set(
+                    jsonb_set(
+                        jobs.data || %s,
+                        '{attempts}',
+                        to_jsonb(COALESCE((jobs.data->>'attempts')::integer, 0) + 1)
+                    ),
+                    '{workerAttempts}',
+                    to_jsonb(COALESCE((jobs.data->>'workerAttempts')::integer, 0) + 1)
+                )
+            FROM candidate
+            WHERE jobs.job_id = candidate.job_id
+            RETURNING jobs.data, jobs.user_id, jobs.created_at, jobs.updated_at,
+                      jobs.input_data IS NOT NULL AS draft_available
+            """,
+            (claim_token, max(lease_seconds, 1), Jsonb(updates)),
         ).fetchone()
     return _generation_job_from_row(row)
 
@@ -1463,7 +1556,8 @@ def renew_generation_job_lease(job_id: str, claim_token: str, lease_seconds: int
         result = connection.execute(
             """
             UPDATE generation_jobs
-            SET lease_expires_at = now() + (%s * interval '1 second')
+            SET lease_expires_at = now() + (%s * interval '1 second'),
+                updated_at = now()
             WHERE job_id = %s AND status = 'running' AND claim_token = %s
             """,
             (max(lease_seconds, 1), job_id, claim_token),
@@ -1505,7 +1599,7 @@ def update_generation_job_conditionally(
                 claim_token = CASE WHEN %s THEN NULL ELSE claim_token END,
                 lease_expires_at = CASE WHEN %s THEN NULL ELSE lease_expires_at END
             WHERE {' AND '.join(clauses)}
-            RETURNING data, created_at, updated_at,
+            RETURNING data, user_id, created_at, updated_at,
                       input_data IS NOT NULL AS draft_available
             """,
             (
@@ -1536,6 +1630,25 @@ def cancel_generation_job_record(job_id: str) -> GenerationJobStatus | None:
             "error": None,
         },
         expected_statuses=("queued", "running"),
+        release_claim=True,
+    )
+
+
+def requeue_generation_job_claim(job_id: str, claim_token: str) -> GenerationJobStatus | None:
+    """Release a worker claim during graceful shutdown while retaining input."""
+
+    return update_generation_job_conditionally(
+        job_id,
+        {
+            "status": "queued",
+            "stage": "queued",
+            "progress": 5,
+            "message": "服务重启后任务重新排队。",
+            "error": None,
+            "failure": None,
+        },
+        expected_statuses=("running",),
+        claim_token=claim_token,
         release_claim=True,
     )
 
@@ -1598,75 +1711,11 @@ def clear_expired_generation_quota_counters(current_day: date) -> int:
     return result.rowcount
 
 
-def reserve_speech_quota(user_id: str, current_day: date, daily_limit: int) -> int:
-    """Atomically reserve one transcription attempt for a user.
-
-    The counter lives on the account so deleting business data cannot be used
-    to bypass the daily limit.  A non-positive limit disables enforcement but
-    still keeps the current day's usage available for operations checks.
-    """
-    with _connect() as connection:
-        quota_user = connection.execute(
-            """
-            SELECT speech_quota_day, speech_quota_used
-            FROM users
-            WHERE id = %s
-            FOR UPDATE
-            """,
-            (user_id,),
-        ).fetchone()
-        if not quota_user:
-            raise RuntimeError("语音转写用户不存在。")
-
-        used = (
-            int(quota_user["speech_quota_used"] or 0)
-            if quota_user["speech_quota_day"] == current_day
-            else 0
-        )
-        if daily_limit > 0 and used >= daily_limit:
-            raise SpeechQuotaStorageError(limit=daily_limit, used=used)
-
-        next_used = used + 1
-        connection.execute(
-            """
-            UPDATE users
-            SET speech_quota_day = %s,
-                speech_quota_used = %s,
-                updated_at = %s
-            WHERE id = %s
-            """,
-            (
-                current_day,
-                next_used,
-                datetime.now(timezone.utc).isoformat(),
-                user_id,
-            ),
-        )
-    return next_used
-
-
-def clear_expired_speech_quota_counters(current_day: date) -> int:
-    """Clear speech quota metadata after its configured local day ends."""
-    with _connect() as connection:
-        result = connection.execute(
-            """
-            UPDATE users
-            SET speech_quota_day = NULL,
-                speech_quota_used = 0,
-                updated_at = %s
-            WHERE speech_quota_day IS NOT NULL
-              AND speech_quota_day < %s
-            """,
-            (datetime.now(timezone.utc).isoformat(), current_day),
-        )
-    return result.rowcount
-
-
 def find_generation_job(job_id: str) -> GenerationJobStatus | None:
     with _connect() as connection:
         row = connection.execute(
             """
-            SELECT data, created_at, updated_at,
+            SELECT data, user_id, created_at, updated_at,
                    input_data IS NOT NULL AS draft_available
             FROM generation_jobs
             WHERE job_id = %s
@@ -1680,7 +1729,8 @@ def get_user_generation_jobs(user_id: str, limit: int = 20) -> list[dict[str, An
     with _connect() as connection:
         rows = connection.execute(
             """
-            SELECT data, created_at, updated_at, input_data IS NOT NULL AS draft_available
+            SELECT data, user_id, created_at, updated_at,
+                   input_data IS NOT NULL AS draft_available
             FROM generation_jobs
             WHERE user_id = %s
               AND status <> 'success'
@@ -1751,6 +1801,13 @@ def _safe_job_failure_data(job_data: dict[str, Any]) -> dict[str, Any] | None:
         "retryable": False,
         "traceId": job_data.get("jobId"),
     }
+
+
+def _safe_nonnegative_int(value: Any, default: int = 0) -> int:
+    try:
+        return max(int(value), 0)
+    except (TypeError, ValueError):
+        return default
 
 
 def _admin_job_filters(
@@ -1973,6 +2030,14 @@ def get_admin_assessments(
         report_status = report_data.get("generationStatus") if report_data else None
         if report_status is None and task_status == "failed":
             report_status = "failed"
+        failure = _safe_job_failure_data(job_data)
+        stage = job_data.get("stage") or ("completed" if task_status == "success" else task_status)
+        raw_progress = job_data.get("progress")
+        try:
+            progress = int(raw_progress)
+        except (TypeError, ValueError):
+            progress = 100 if task_status == "success" else 0
+        progress = max(0, min(progress, 100))
         display_name = (
             assessment_data.get("studentName")
             or row["display_name"]
@@ -1994,14 +2059,115 @@ def get_admin_assessments(
                 "grade": row["grade"] or "",
                 "collegeMajor": row["college_major"] or "",
                 "taskStatus": task_status,
+                "stage": stage,
+                "progress": progress,
+                "message": job_data.get("message") or "",
+                "attempts": _safe_nonnegative_int(job_data.get("attempts")),
+                "workerAttempts": _safe_nonnegative_int(job_data.get("workerAttempts")),
+                "llmRequestAttempts": _safe_nonnegative_int(job_data.get("llmRequestAttempts")),
+                "llmRetryCount": _safe_nonnegative_int(job_data.get("llmRetryCount")),
+                "qualityRepairCount": _safe_nonnegative_int(job_data.get("qualityRepairCount")),
                 "reportStatus": report_status,
                 "reportId": report_data.get("id") if report_data else job_data.get("reportId"),
                 "draftAvailable": bool(row["draft_available"]),
-                "failure": _safe_job_failure_data(job_data),
-                "error": (_safe_job_failure_data(job_data) or {}).get("message"),
+                "failure": failure,
+                "error": (failure or {}).get("message"),
             }
         )
     return {"total": int(total_row["total"]), "items": items}
+
+
+def get_admin_users(
+    *,
+    role: str = "all",
+    keyword: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> dict[str, Any]:
+    clauses = ["1 = 1"]
+    params: list[Any] = []
+    if role and role != "all":
+        clauses.append("users.role = %s")
+        params.append(role)
+    if keyword and keyword.strip():
+        pattern = f"%{keyword.strip()}%"
+        clauses.append(
+            "("
+            "users.id ILIKE %s "
+            "OR COALESCE(users.username, '') ILIKE %s "
+            "OR COALESCE(users.display_name, '') ILIKE %s"
+            ")"
+        )
+        params.extend([pattern] * 3)
+    where_sql = " AND ".join(clauses)
+
+    with _connect() as connection:
+        summary = connection.execute(
+            """
+            SELECT
+                COUNT(*) AS total,
+                COUNT(*) FILTER (WHERE role = 'student') AS student_count,
+                COUNT(*) FILTER (WHERE role = 'admin') AS admin_count
+            FROM users
+            """
+        ).fetchone()
+        total_row = connection.execute(
+            f"""
+            SELECT COUNT(*) AS total
+            FROM users
+            WHERE {where_sql}
+            """,
+            params,
+        ).fetchone()
+        rows = connection.execute(
+            f"""
+            SELECT
+                users.id,
+                users.username,
+                users.display_name,
+                users.role,
+                users.created_at,
+                users.updated_at,
+                (SELECT COUNT(*) FROM assessment_responses WHERE user_id = users.id) AS assessment_count,
+                (SELECT COUNT(*) FROM generation_jobs WHERE user_id = users.id) AS generation_job_count,
+                (SELECT COUNT(*) FROM reports WHERE user_id = users.id) AS report_count,
+                GREATEST(
+                    users.updated_at::timestamptz,
+                    (SELECT MAX(submitted_at::timestamptz) FROM assessment_responses WHERE user_id = users.id),
+                    (SELECT MAX(updated_at) FROM generation_jobs WHERE user_id = users.id),
+                    (SELECT MAX(updated_at::timestamptz) FROM reports WHERE user_id = users.id)
+                )::text AS last_activity_at
+            FROM users
+            WHERE {where_sql}
+            ORDER BY users.created_at DESC, users.id
+            LIMIT %s OFFSET %s
+            """,
+            [*params, max(limit, 1), max(offset, 0)],
+        ).fetchall()
+
+    return {
+        "summary": {
+            "total": int(summary["total"]),
+            "studentCount": int(summary["student_count"]),
+            "adminCount": int(summary["admin_count"]),
+        },
+        "total": int(total_row["total"]),
+        "items": [
+            {
+                "id": row["id"],
+                "username": row["username"] or "未设置账号",
+                "displayName": row["display_name"] or row["username"] or "未命名用户",
+                "role": row["role"],
+                "createdAt": _iso_timestamp(row["created_at"]),
+                "updatedAt": _iso_timestamp(row["updated_at"]),
+                "lastActivityAt": _iso_timestamp(row["last_activity_at"]),
+                "assessmentCount": int(row["assessment_count"]),
+                "generationJobCount": int(row["generation_job_count"]),
+                "reportCount": int(row["report_count"]),
+            }
+            for row in rows
+        ],
+    }
 
 
 def get_metrics() -> dict[str, Any]:
@@ -2009,6 +2175,7 @@ def get_metrics() -> dict[str, Any]:
         metrics = connection.execute(
             """
             SELECT
+                (SELECT COUNT(*) FROM users) AS user_count,
                 (
                     (SELECT COUNT(*) FROM assessment_responses)
                     + (
@@ -2024,8 +2191,10 @@ def get_metrics() -> dict[str, Any]:
                 ) AS assessment_count,
                 (SELECT COUNT(*) FROM reports WHERE generation_status = 'success') AS report_success_count,
                 (SELECT COUNT(*) FROM generation_jobs WHERE status = 'failed') AS report_failed_count,
-                (SELECT COUNT(*) FROM generation_jobs WHERE status IN ('queued', 'running')) AS generation_running_count,
+                (SELECT COUNT(*) FROM generation_jobs WHERE status = 'success') AS generation_success_count,
+                (SELECT COUNT(*) FROM generation_jobs WHERE status = 'running') AS generation_running_count,
                 (SELECT COUNT(*) FROM generation_jobs WHERE status = 'queued') AS generation_queued_count,
+                (SELECT COUNT(*) FROM generation_jobs WHERE status = 'cancelled') AS generation_cancelled_count,
                 (SELECT COUNT(*) FROM report_feedback) AS feedback_count,
                 COALESCE(ROUND(AVG(understanding_score)::numeric, 1), 0) AS average_understanding_score,
                 COALESCE(ROUND(AVG(insight_score)::numeric, 1), 0) AS average_insight_score,
@@ -2050,12 +2219,15 @@ def get_metrics() -> dict[str, Any]:
         ).fetchall()
 
     return {
+        "userCount": metrics["user_count"],
         "assessmentCount": metrics["assessment_count"],
         "reportSuccessCount": metrics["report_success_count"],
         "reportFailedCount": metrics["report_failed_count"],
         "generationFailedCount": metrics["report_failed_count"],
+        "generationSuccessCount": metrics["generation_success_count"],
         "generationRunningCount": metrics["generation_running_count"],
         "generationQueuedCount": metrics["generation_queued_count"],
+        "generationCancelledCount": metrics["generation_cancelled_count"],
         "feedbackCount": metrics["feedback_count"],
         "averageUnderstandingScore": float(metrics["average_understanding_score"]),
         "averageInsightScore": float(metrics["average_insight_score"]),
@@ -2071,6 +2243,7 @@ def get_recent_reports(limit: int = 8) -> list[dict[str, Any]]:
             """
             SELECT data
             FROM reports
+            WHERE generation_status = 'success'
             ORDER BY created_at DESC
             LIMIT %s
             """,
@@ -2118,6 +2291,7 @@ def get_admin_records() -> list[dict[str, Any]]:
             FROM reports
             LEFT JOIN users ON users.id = reports.user_id
             LEFT JOIN assessment_responses ON assessment_responses.id = reports.response_id
+            WHERE reports.generation_status = 'success'
             ORDER BY reports.created_at DESC
             """
         ).fetchall()
@@ -2326,7 +2500,13 @@ def record_admin_audit(
 
 def get_admin_audit_logs(*, limit: int = 50, offset: int = 0) -> dict[str, Any]:
     with _connect() as connection:
-        total_row = connection.execute("SELECT COUNT(*) AS total FROM admin_audit_logs").fetchone()
+        total_row = connection.execute(
+            """
+            SELECT COUNT(*) AS total
+            FROM admin_audit_logs
+            WHERE action IN ('report.update', 'report.delete')
+            """
+        ).fetchone()
         rows = connection.execute(
             """
             SELECT logs.id,
@@ -2340,6 +2520,7 @@ def get_admin_audit_logs(*, limit: int = 50, offset: int = 0) -> dict[str, Any]:
                    logs.details
             FROM admin_audit_logs AS logs
             LEFT JOIN users ON users.id = logs.admin_id
+            WHERE logs.action IN ('report.update', 'report.delete')
             ORDER BY logs.created_at DESC
             LIMIT %s OFFSET %s
             """,

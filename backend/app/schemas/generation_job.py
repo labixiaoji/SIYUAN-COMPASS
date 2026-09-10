@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 class GenerationJobCreated(BaseModel):
     jobId: str
     status: Literal["queued"]
+    maxConcurrentReports: int = Field(default=3, ge=1)
 
 
 class GenerationFailure(BaseModel):
@@ -26,6 +27,7 @@ class GenerationFailure(BaseModel):
     providerStatus: Optional[int] = None
     traceId: Optional[str] = None
     occurredAt: Optional[str] = None
+    missingFields: list[str] = Field(default_factory=list)
 
 
 class GenerationJobStatus(BaseModel):
@@ -34,6 +36,7 @@ class GenerationJobStatus(BaseModel):
     stage: str
     progress: int = Field(ge=0, le=100)
     message: str
+    maxConcurrentReports: int = Field(default=3, ge=1)
     userId: Optional[str] = None
     responseId: Optional[str] = None
     profileId: Optional[str] = None
@@ -41,7 +44,13 @@ class GenerationJobStatus(BaseModel):
     generationStatus: Optional[str] = None
     error: Optional[str] = None
     attempts: int = Field(default=0, ge=0)
+    workerAttempts: int = Field(default=0, ge=0)
+    llmRequestAttempts: int = Field(default=0, ge=0)
+    llmRetryCount: int = Field(default=0, ge=0)
+    qualityRepairCount: int = Field(default=0, ge=0)
+    lastAttemptKind: Optional[str] = None
     failure: Optional[GenerationFailure] = None
+    missingFields: list[str] = Field(default_factory=list)
     draftAvailable: bool = False
     createdAt: Optional[str] = None
     updatedAt: Optional[str] = None

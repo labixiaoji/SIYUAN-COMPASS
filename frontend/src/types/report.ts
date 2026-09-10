@@ -14,6 +14,7 @@ export type CareerBlueprintReport = {
   errorMessage?: string;
   modelName: string;
   promptVersion: string;
+  qualityRuleVersion?: string;
   retryCount: number;
   createdAt: string;
   updatedAt: string;
@@ -26,6 +27,7 @@ export type CareerBlueprintReport = {
 };
 
 export type AdminMetrics = {
+  userCount: number;
   assessmentCount: number;
   reportSuccessCount: number;
   reportFailedCount: number;
@@ -37,8 +39,10 @@ export type AdminMetrics = {
   lowScoreReports: string[];
   recentReports: CareerBlueprintReport[];
   generationFailedCount?: number;
+  generationSuccessCount?: number;
   generationRunningCount?: number;
   generationQueuedCount?: number;
+  generationCancelledCount?: number;
 };
 
 export type ReportFeedbackRecord = {
@@ -96,6 +100,14 @@ export type AdminAssessmentRecord = {
   grade?: string;
   collegeMajor?: string;
   taskStatus: string;
+  stage?: string | null;
+  progress?: number | null;
+  message?: string | null;
+  attempts?: number;
+  workerAttempts?: number;
+  llmRequestAttempts?: number;
+  llmRetryCount?: number;
+  qualityRepairCount?: number;
   reportStatus?: string | null;
   reportId?: string | null;
   draftAvailable: boolean;

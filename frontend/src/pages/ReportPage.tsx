@@ -68,7 +68,7 @@ export function ReportPage() {
       <div className="actions">
         {user?.role === "admin" ? (
           <>
-            <Link className="button secondary" to="/admin">返回后台</Link>
+            <Link className="button secondary" to="/admin/reports">返回已生成报告</Link>
             <Link className="button" to={`/admin/reports/${report.id}/edit`}>编辑报告</Link>
           </>
         ) : (

@@ -61,7 +61,7 @@ export function AdminReportEditPage() {
         </div>
         {status && <div className={status.startsWith("报告已保存") ? "success" : "error"}>{status}</div>}
         <div className="actions">
-          <Link className="button secondary" to="/admin">返回后台</Link>
+          <Link className="button secondary" to="/admin/reports">返回已生成报告</Link>
           {reportId && <Link className="button secondary" to={`/reports/${reportId}`}>预览报告</Link>}
           <button className="button" disabled={saving || !title.trim() || !content.trim()} onClick={save}>
             {saving ? "保存中..." : "保存修改"}

@@ -1,3 +1,5 @@
+from collections.abc import Mapping
+
 from app.schemas.assessment import AssessmentResponseInput
 
 REQUIRED_STRING_FIELDS = {
@@ -52,6 +54,81 @@ def _has_text(value: object) -> bool:
 
 def _has_array(value: object, minimum: int = 1) -> bool:
     return isinstance(value, list) and len(value) >= minimum
+
+
+def validate_raw_assessment_fields(raw: Mapping[str, object]) -> dict[str, str]:
+    """Validate a persisted snapshot before Pydantic defaults are applied.
+
+    The input model contains a few backwards-compatible defaults.  A resumed
+    task must not turn an omitted answer into a fabricated answer, so the
+    durable worker checks the raw JSON first and records the exact fields that
+    need to be completed.
+    """
+
+    errors: dict[str, str] = {}
+    for field, message in REQUIRED_STRING_FIELDS.items():
+        if not _has_text(raw.get(field)):
+            errors[field] = message
+
+    education_stage = raw.get("educationStage")
+    if education_stage == "本科" and not _has_text(raw.get("mastersIntention")):
+        errors["mastersIntention"] = "请选择本科毕业后的主要计划"
+    if education_stage == "硕士" and not _has_text(raw.get("phdIntention")):
+        errors["phdIntention"] = "请选择硕士毕业后的主要考虑"
+    if education_stage == "博士" and not _has_text(raw.get("doctoralCareerDirection")):
+        errors["doctoralCareerDirection"] = "请选择博士阶段后的发展方向"
+    if raw.get("doctoralCareerDirection") == "其他发展方向" and not _has_text(raw.get("doctoralCareerOther")):
+        errors["doctoralCareerOther"] = "请填写其他发展方向"
+
+    required_arrays = {
+        "educationPathReasons": "请至少选择1项教育路径原因",
+        "topValuesRanked": "请选出最看重的3项价值观",
+        "praisedTraits": "请至少选择1项常被称赞的特质",
+        "preferredWorkStyle": "请至少选择1项更偏好的工作方式",
+        "currentPreparations": "请至少选择1项已做准备",
+        "missingResources": "请至少选择1项目前最缺的资源",
+        "jobInfoChannels": "请至少选择1个职业或招聘信息渠道",
+        "careerConfusions": "请至少选择1项当前生涯困惑",
+    }
+    for field, message in required_arrays.items():
+        if not _has_array(raw.get(field)):
+            errors[field] = message
+
+    ability_scores = raw.get("abilityScores")
+    if not isinstance(ability_scores, Mapping):
+        errors["abilityScores"] = "请完成能力评分"
+    elif any(
+        key not in ability_scores or type(ability_scores[key]) is not int or not 1 <= ability_scores[key] <= 5
+        for key in ("logic", "expression", "spatialDesign", "interpersonal")
+    ):
+        errors["abilityScores"] = "请完成能力评分"
+
+    interest_scores = raw.get("interestScores")
+    if not isinstance(interest_scores, Mapping):
+        errors["interestScores"] = "请完成兴趣评分"
+    elif any(
+        key not in interest_scores or type(interest_scores[key]) is not int or not 1 <= interest_scores[key] <= 5
+        for key in ("handsOn", "research", "creation", "helping", "leadership", "detail")
+    ):
+        errors["interestScores"] = "请完成兴趣评分"
+    if "longTermPersistence" not in raw or raw.get("longTermPersistence") is None:
+        errors["longTermPersistence"] = "请完成长期坚持度评分"
+
+    conditional_fields = {
+        "educationPathReasonOther": ("educationPathReasons", "请填写其他教育路径原因"),
+        "currentPreparationOther": ("currentPreparations", "请填写其他已做准备"),
+        "jobInfoChannelOther": ("jobInfoChannels", "请填写其他职业信息渠道"),
+        "careerConfusionOther": ("careerConfusions", "请填写其他生涯困惑"),
+    }
+    for field, (source_field, message) in conditional_fields.items():
+        source_value = raw.get(source_field)
+        if isinstance(source_value, list) and "其他" in source_value and not _has_text(raw.get(field)):
+            errors[field] = message
+
+    top_values = raw.get("topValuesRanked")
+    if isinstance(top_values, list) and len(top_values) != 3:
+        errors["topValuesRanked"] = "请选出最看重的3项价值观"
+    return errors
 
 
 def validate_assessment_fields(input_data: AssessmentResponseInput) -> dict[str, str]:

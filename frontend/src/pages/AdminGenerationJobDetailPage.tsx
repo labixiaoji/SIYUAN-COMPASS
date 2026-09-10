@@ -57,11 +57,11 @@ export function AdminGenerationJobDetailPage() {
     if (!jobId) return;
     fetchAdminGenerationJob(jobId)
       .then(setJob)
-      .catch((caught) => setError(caught instanceof Error ? caught.message : "生成任务加载失败。"));
+      .catch((caught) => setError(caught instanceof Error ? caught.message : "生成状态加载失败。"));
   }, [jobId]);
 
   if (error) return <main className="shell page"><div className="error">{error}</div></main>;
-  if (!job) return <main className="shell page"><div className="panel">生成任务加载中...</div></main>;
+  if (!job) return <main className="shell page"><div className="panel">生成状态加载中...</div></main>;
 
   const failure = job.failure || (job.status === "failed" ? {
     code: "LEGACY_ERROR",
@@ -73,7 +73,7 @@ export function AdminGenerationJobDetailPage() {
   return (
     <main className="shell page admin-detail-page">
       <div className="page-title">
-        <h1>生成任务详情</h1>
+        <h1>生成状态详情</h1>
         <p>任务编号：{job.jobId}</p>
       </div>
 
@@ -89,6 +89,9 @@ export function AdminGenerationJobDetailPage() {
           <div><span>当前阶段</span><strong>{stageText(job.stage)}</strong></div>
           <div><span>处理进度</span><strong>{job.progress}%</strong></div>
           <div><span>尝试次数</span><strong>{job.attempts ?? 0}</strong></div>
+          <div><span>Worker 尝试</span><strong>{job.workerAttempts ?? 0}</strong></div>
+          <div><span>模型请求 / 重试</span><strong>{job.llmRequestAttempts ?? 0} / {job.llmRetryCount ?? 0}</strong></div>
+          <div><span>质量修复</span><strong>{job.qualityRepairCount ?? 0}</strong></div>
           <div><span>最近更新</span><strong>{formatTime(job.updatedAt)}</strong></div>
         </div>
         <p className="admin-detail-message">{job.message}</p>
@@ -117,6 +120,12 @@ export function AdminGenerationJobDetailPage() {
             <span>错误说明</span>
             <p>{failure.message}</p>
           </div>
+          {failure.missingFields && failure.missingFields.length > 0 && (
+            <div className="admin-error-message">
+              <span>缺少字段</span>
+              <p>{failure.missingFields.join("、")}</p>
+            </div>
+          )}
         </section>
       )}
 
@@ -124,9 +133,9 @@ export function AdminGenerationJobDetailPage() {
         <h2>关联数据</h2>
         <div className="actions">
           {job.responseId && <Link className="button secondary" to={`/admin/assessments/${job.responseId}`}>查看已保存问卷</Link>}
-          {job.draftAvailable && <Link className="button secondary" to={`/admin/generation-jobs/${job.jobId}/draft`}>查看失败任务问卷</Link>}
+          {job.draftAvailable && <Link className="button secondary" to={`/admin/generation-jobs/${job.jobId}/draft`}>查看保留问卷草稿</Link>}
           {job.reportId && <Link className="button" to={`/reports/${job.reportId}`}>查看报告</Link>}
-          <Link className="button secondary" to="/admin/generation-jobs">返回生成任务</Link>
+          <Link className="button secondary" to="/admin/assessments">返回填写记录</Link>
         </div>
       </section>
     </main>

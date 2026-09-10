@@ -26,7 +26,7 @@ export function AdminGenerationJobDraftPage() {
   return (
     <main className="shell page admin-detail-page">
       <div className="page-title">
-        <h1>失败任务问卷</h1>
+        <h1>失败记录问卷草稿</h1>
         <p>任务编号：{draft.jobId} · 来源：{draft.source === "cloud_draft" ? "云端草稿" : "任务快照"}</p>
       </div>
       <div className="success admin-data-notice" role="status">
@@ -34,7 +34,7 @@ export function AdminGenerationJobDraftPage() {
       </div>
       <AdminAssessmentReader assessment={{ ...draft.answers, submittedAt: draft.updatedAt }} />
       <div className="actions">
-        <Link className="button secondary" to={`/admin/generation-jobs/${draft.jobId}`}>返回任务详情</Link>
+        <Link className="button secondary" to={`/admin/generation-jobs/${draft.jobId}`}>返回生成状态</Link>
         <Link className="button secondary" to="/admin/assessments">返回填写记录</Link>
       </div>
     </main>

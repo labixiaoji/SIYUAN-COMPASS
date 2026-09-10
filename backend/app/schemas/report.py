@@ -1,8 +1,118 @@
 from __future__ import annotations
 
-from typing import Any, Literal, Optional
+from typing import Annotated, Any, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+
+PlanId = Literal["A", "B", "C"]
+ListItemText = Annotated[str, Field(min_length=1, max_length=300)]
+QuestionText = Annotated[str, Field(min_length=10, max_length=250)]
+
+
+class _ReportDraftModel(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+
+class ReportPortrait(_ReportDraftModel):
+    fiveYearPortrait: str = Field(min_length=250, max_length=700)
+    tenYearPortrait: str = Field(min_length=250, max_length=700)
+
+
+class ReportAnalysisItem(_ReportDraftModel):
+    title: str = Field(min_length=1, max_length=40)
+    evidenceStatus: Literal["verified", "potential", "risk"]
+    studentNarrative: str = Field(min_length=30, max_length=450)
+    evidence: list[ListItemText] = Field(min_length=1, max_length=4)
+    futureRelevance: str = Field(min_length=20, max_length=350)
+    validation: str = Field(default="", max_length=300)
+
+
+class ReportStrengthsAndRisks(_ReportDraftModel):
+    strengths: list[ReportAnalysisItem] = Field(min_length=2, max_length=2)
+    risks: list[ReportAnalysisItem] = Field(min_length=2, max_length=2)
+
+    @model_validator(mode="after")
+    def require_risk_validation(self):
+        if any(item.evidenceStatus == "risk" for item in self.strengths):
+            raise ValueError("优势的 evidenceStatus 只能是 verified 或 potential")
+        if any(item.evidenceStatus != "risk" for item in self.risks):
+            raise ValueError("风险的 evidenceStatus 必须是 risk")
+        return self
+
+
+class ReportPlan(_ReportDraftModel):
+    id: PlanId
+    title: str = Field(min_length=4, max_length=80)
+    futureScene: str = Field(min_length=30, max_length=500)
+    whyItFitsYou: str = Field(min_length=30, max_length=450)
+    currentGap: str = Field(min_length=20, max_length=300)
+    firstExperiment: str = Field(min_length=20, max_length=350)
+    decisionSignal: str = Field(min_length=20, max_length=300)
+
+    @field_validator("id", mode="before")
+    @classmethod
+    def normalize_plan_id(cls, value):
+        normalized = str(value).strip().upper().replace("PLAN", "").strip()
+        return normalized
+
+
+class ReportDiagnosis(_ReportDraftModel):
+    currentConfusion: str = Field(min_length=20, max_length=600)
+    underlyingProblem: str = Field(min_length=30, max_length=900)
+    pathRelationship: str = Field(min_length=50, max_length=500)
+    plans: list[ReportPlan] = Field(min_length=3, max_length=3)
+
+    @model_validator(mode="after")
+    def require_all_plan_ids(self):
+        if {plan.id for plan in self.plans} != {"A", "B", "C"}:
+            raise ValueError("plans 必须分别包含 Plan A、Plan B 和 Plan C")
+        return self
+
+
+class ReportAction(_ReportDraftModel):
+    title: str = Field(min_length=1, max_length=80)
+    purpose: str = Field(min_length=1, max_length=300)
+    steps: list[ListItemText] = Field(min_length=1, max_length=4)
+    completionCriteria: str = Field(min_length=1, max_length=300)
+    deadline: str = Field(min_length=1, max_length=80)
+    validatesPlans: list[PlanId] = Field(min_length=1, max_length=3)
+    pathConnection: str = Field(min_length=15, max_length=400)
+    reflectionSignal: str = Field(min_length=20, max_length=300)
+
+    @field_validator("validatesPlans", mode="before")
+    @classmethod
+    def normalize_plan_ids(cls, value):
+        if not isinstance(value, list):
+            return value
+        return [str(item).strip().upper().replace("PLAN", "").strip() for item in value]
+
+    @model_validator(mode="after")
+    def require_distinct_plan_ids(self):
+        if len(set(self.validatesPlans)) != len(self.validatesPlans):
+            raise ValueError("validatesPlans 不能包含重复路径")
+        return self
+
+
+class ReportLongTermQuestion(_ReportDraftModel):
+    context: str = Field(min_length=30, max_length=500)
+    question: str = Field(min_length=10, max_length=250)
+
+
+class CareerBlueprintDraft(_ReportDraftModel):
+    portrait: ReportPortrait
+    strengthsAndRisks: ReportStrengthsAndRisks
+    diagnosis: ReportDiagnosis
+    sixMonthActions: list[ReportAction] = Field(min_length=3, max_length=5)
+    reviewQuestions: list[QuestionText] = Field(min_length=5, max_length=7)
+    longTermQuestion: ReportLongTermQuestion
+
+    @model_validator(mode="after")
+    def require_distinct_review_questions(self):
+        normalized = {"".join(question.split()) for question in self.reviewQuestions}
+        if len(normalized) != len(self.reviewQuestions):
+            raise ValueError("reviewQuestions 不能包含重复问题")
+        return self
 
 class CareerBlueprintReport(BaseModel):
     id: str
@@ -17,6 +127,7 @@ class CareerBlueprintReport(BaseModel):
     errorMessage: Optional[str] = None
     modelName: str
     promptVersion: str
+    qualityRuleVersion: str = "legacy-rule-v1.0.0"
     inputSnapshot: dict[str, Any]
     retryCount: int
     createdAt: str

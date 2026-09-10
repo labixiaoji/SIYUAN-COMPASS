@@ -1,13 +1,13 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { fetchAdminGenerationJobs, fetchAdminMetrics } from "../api/admin";
-import type { AdminGenerationJob, AdminMetrics } from "../types/report";
+import { fetchAdminAssessments, fetchAdminMetrics } from "../api/admin";
+import type { AdminAssessmentRecord, AdminMetrics } from "../types/report";
 
 function statusText(status: string) {
   const labels: Record<string, string> = {
     queued: "等待生成",
     running: "生成中",
-    success: "已成功",
+    success: "已生成",
     failed: "生成失败",
     cancelled: "已取消",
     unknown: "未记录"
@@ -28,20 +28,20 @@ function formatTime(value?: string | null) {
   return Number.isNaN(date.getTime()) ? "时间未知" : date.toLocaleString("zh-CN");
 }
 
-function failureText(job: AdminGenerationJob) {
-  return job.failure?.message || job.error || "未记录具体错误信息";
+function failureText(item: AdminAssessmentRecord) {
+  return item.failure?.message || item.error || "未记录具体错误信息";
 }
 
 export function AdminPage() {
   const [metrics, setMetrics] = useState<AdminMetrics | null>(null);
-  const [recentFailures, setRecentFailures] = useState<AdminGenerationJob[]>([]);
+  const [recentFailures, setRecentFailures] = useState<AdminAssessmentRecord[]>([]);
   const [error, setError] = useState("");
 
   useEffect(() => {
     let closed = false;
     Promise.all([
       fetchAdminMetrics(),
-      fetchAdminGenerationJobs({ status: "failed", limit: 5, offset: 0 })
+      fetchAdminAssessments({ status: "failed", limit: 5, offset: 0 })
     ]).then(([nextMetrics, nextFailures]) => {
       if (closed) return;
       setMetrics(nextMetrics);
@@ -64,34 +64,45 @@ export function AdminPage() {
 
   const failedCount = metrics.generationFailedCount ?? metrics.reportFailedCount;
   const runningCount = metrics.generationRunningCount ?? 0;
+  const queuedCount = metrics.generationQueuedCount ?? 0;
 
   return (
     <main className="shell page admin-overview-page">
       <div className="page-title">
         <h1>管理员后台</h1>
-        <p>从总览进入填写记录、生成任务、成功报告和审计日志，分别处理不同类型的管理工作。</p>
+        <p>填写记录集中展示问卷提交和生成进度，已生成报告使用卡片方式统一查看。</p>
       </div>
 
       <section className="metrics admin-metrics" aria-label="后台统计">
+        <Link className="panel stat admin-metric-link" to="/admin/users">
+          <strong>{metrics.userCount}</strong>
+          <span>注册用户</span>
+          <small>查看账号和使用情况</small>
+        </Link>
         <Link className="panel stat admin-metric-link" to="/admin/assessments">
           <strong>{metrics.assessmentCount}</strong>
           <span>填写记录</span>
           <small>查看所有问卷提交</small>
         </Link>
-        <Link className="panel stat admin-metric-link" to="/admin/reports?status=success">
+        <Link className="panel stat admin-metric-link" to="/admin/reports">
           <strong>{metrics.reportSuccessCount}</strong>
-          <span>成功报告</span>
+          <span>已生成报告</span>
           <small>查看已生成报告</small>
         </Link>
-        <Link className="panel stat admin-metric-link admin-metric-failed" to="/admin/generation-jobs?status=failed">
+        <Link className="panel stat admin-metric-link admin-metric-failed" to="/admin/assessments?status=failed">
           <strong>{failedCount}</strong>
-          <span>失败任务</span>
+          <span>失败记录</span>
           <small>查看阶段和报错信息</small>
         </Link>
-        <Link className="panel stat admin-metric-link" to="/admin/generation-jobs?status=running">
+        <Link className="panel stat admin-metric-link" to="/admin/assessments?status=running">
           <strong>{runningCount}</strong>
-          <span>生成中任务</span>
+          <span>生成中记录</span>
           <small>查看当前处理进度</small>
+        </Link>
+        <Link className="panel stat admin-metric-link" to="/admin/assessments?status=queued">
+          <strong>{queuedCount}</strong>
+          <span>排队中记录</span>
+          <small>等待 Worker 领取</small>
         </Link>
       </section>
 
@@ -128,27 +139,34 @@ export function AdminPage() {
       <section className="panel admin-overview-failures">
         <div className="admin-section-head">
           <div>
-            <h2>最近失败任务</h2>
-            <p className="hint">失败任务会保留脱敏问卷快照，点击详情可查看失败阶段和定位信息。</p>
+            <h2>最近失败记录</h2>
+            <p className="hint">失败记录会保留脱敏问卷快照，填写记录页可查看失败阶段和定位信息。</p>
           </div>
-          <Link className="button secondary" to="/admin/generation-jobs?status=failed">查看全部</Link>
+          <Link className="button secondary" to="/admin/assessments?status=failed">查看全部</Link>
         </div>
         {recentFailures.length === 0 ? (
-          <p className="hint">暂无失败任务。</p>
+          <p className="hint">暂无失败记录。</p>
         ) : (
           <div className="admin-failure-list">
-            {recentFailures.map((job) => (
-              <Link className="admin-failure-row" key={job.jobId} to={`/admin/generation-jobs/${job.jobId}`}>
-                <div>
-                  <strong>{job.student.displayName}</strong>
-                  <span>{formatTime(job.updatedAt)} · {job.failure?.code || "UNKNOWN_ERROR"}</span>
-                </div>
-                <div className="admin-failure-row-detail">
-                  <span className={`job-status-pill ${statusClass(job.status)}`}>{statusText(job.status)}</span>
-                  <p>{failureText(job)}</p>
-                </div>
-              </Link>
-            ))}
+            {recentFailures.map((item) => {
+              const detailPath = item.jobId
+                ? `/admin/generation-jobs/${item.jobId}`
+                : item.responseId
+                  ? `/admin/assessments/${item.responseId}`
+                  : "/admin/assessments";
+              return (
+                <Link className="admin-failure-row" key={item.recordId} to={detailPath}>
+                  <div>
+                    <strong>{item.student.displayName}</strong>
+                    <span>{formatTime(item.submittedAt)} · {item.failure?.code || "UNKNOWN_ERROR"}</span>
+                  </div>
+                  <div className="admin-failure-row-detail">
+                    <span className={`job-status-pill ${statusClass(item.taskStatus)}`}>{statusText(item.taskStatus)}</span>
+                    <p>{failureText(item)}</p>
+                  </div>
+                </Link>
+              );
+            })}
           </div>
         )}
       </section>
@@ -156,13 +174,13 @@ export function AdminPage() {
       <section className="panel admin-recent-reports">
         <div className="admin-section-head">
           <div>
-            <h2>最近成功报告</h2>
-            <p className="hint">质量状态只表示报告校验结果，不等同于生成任务是否失败。</p>
+            <h2>最近已生成报告</h2>
+            <p className="hint">质量状态只表示报告校验结果，不等同于生成过程是否失败。</p>
           </div>
-          <Link className="button secondary" to="/admin/reports?status=success">查看全部</Link>
+          <Link className="button secondary" to="/admin/reports">查看全部</Link>
         </div>
         {metrics.recentReports.length === 0 ? (
-          <p className="hint">暂无成功报告。</p>
+          <p className="hint">暂无已生成报告。</p>
         ) : (
           <div className="admin-recent-report-list">
             {metrics.recentReports.map((report) => (

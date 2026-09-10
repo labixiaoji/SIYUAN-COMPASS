@@ -110,8 +110,33 @@ class ModelDataMinimizationTest(unittest.TestCase):
             model_request = "\n".join(message["content"] for message in messages)
             for forbidden_value in FORBIDDEN_VALUES:
                 self.assertNotIn(forbidden_value, model_request)
+            self.assertNotIn("隐私五年收入值", model_request)
+            self.assertNotIn("隐私十年收入值", model_request)
             self.assertNotIn("13800138000", model_request)
             self.assertNotIn("other@example.invalid", model_request)
+
+    def test_prompts_use_compact_approved_inputs(self) -> None:
+        response = make_response()
+        profile = CareerProfile(
+            id="profile-id",
+            userId=response.userId,
+            responseId=response.id,
+            modelName="test-model",
+            promptVersion="test-prompt",
+            createdAt=response.createdAt,
+            summary="基于已提供信息形成的紧凑画像摘要。",
+        )
+
+        profile_content = build_profile_messages(response)[1]["content"]
+        report_content = build_report_messages(response, profile)[1]["content"]
+
+        self.assertIn("问题解释规则（仅包含本次回答涉及的字段）", profile_content)
+        self.assertNotIn('"source":"docs/01-问卷与报告规范.md"', profile_content)
+        self.assertNotIn('"mastersPlan":null', profile_content)
+        self.assertIn("问卷补充信息（仅保留困惑、基本信息和5—10年愿景", report_content)
+        self.assertNotIn("学生信息（已按最小必要原则脱敏）", report_content)
+        self.assertNotIn('"mastersPlan":null', report_content)
+        self.assertNotIn('\n  "summary"', report_content)
 
     def test_raw_model_output_is_not_kept_on_profile(self) -> None:
         model_output = json.dumps(

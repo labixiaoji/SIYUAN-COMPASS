@@ -14,12 +14,10 @@ from app.api.feedback import router as feedback_router
 from app.api.llm import router as llm_router
 from app.api.privacy import router as privacy_router
 from app.api.reports import router as reports_router
-from app.api.speech import router as speech_router
 from app.core.config import get_settings
-from app.services.generation_jobs import recover_generation_jobs
+from app.services.generation_jobs import recover_generation_jobs, stop_generation_workers
 from app.storage.json_db import (
     clear_expired_generation_quota_counters,
-    clear_expired_speech_quota_counters,
     delete_expired_admin_audit_logs,
     delete_expired_assessment_drafts,
     delete_expired_generation_jobs,
@@ -39,7 +37,6 @@ def run_data_maintenance() -> dict[str, int]:
     generation_quota_day = datetime.now(
         ZoneInfo(settings.report_generation_quota_timezone)
     ).date()
-    speech_quota_day = datetime.now(ZoneInfo(settings.speech_quota_timezone)).date()
     result = {
         "generationJobs": delete_expired_generation_jobs(
             settings.generation_job_retention_days
@@ -53,19 +50,16 @@ def run_data_maintenance() -> dict[str, int]:
         "generationQuotaCounters": clear_expired_generation_quota_counters(
             generation_quota_day
         ),
-        "speechQuotaCounters": clear_expired_speech_quota_counters(speech_quota_day),
     }
     logger.info(
         "data maintenance completed: generation_jobs=%d assessment_drafts=%d admin_audit_logs=%d "
-        "raw_model_outputs=%d non_persisted_assessment_records=%d "
-        "generation_quota_counters=%d speech_quota_counters=%d",
+        "raw_model_outputs=%d non_persisted_assessment_records=%d generation_quota_counters=%d",
         result["generationJobs"],
         result["assessmentDrafts"],
         result["adminAuditLogs"],
         result["rawModelOutputs"],
         result["nonPersistedAssessmentFields"],
         result["generationQuotaCounters"],
-        result["speechQuotaCounters"],
     )
     return result
 
@@ -84,12 +78,14 @@ async def startup() -> None:
     ensure_storage()
     ensure_admin_account()
     run_data_maintenance()
-    recover_generation_jobs()
+    worker_count = recover_generation_jobs()
+    logger.info("generation worker pool started: workers=%s", worker_count)
     DATA_MAINTENANCE_TASK = asyncio.create_task(_run_daily_data_maintenance())
 
 
 async def shutdown() -> None:
     global DATA_MAINTENANCE_TASK
+    await stop_generation_workers()
     if DATA_MAINTENANCE_TASK:
         DATA_MAINTENANCE_TASK.cancel()
         with suppress(asyncio.CancelledError):
@@ -129,7 +125,6 @@ def health() -> dict[str, str]:
 app.include_router(auth_router, prefix="/api")
 app.include_router(assessments_router, prefix="/api")
 app.include_router(reports_router, prefix="/api")
-app.include_router(speech_router, prefix="/api")
 app.include_router(feedback_router, prefix="/api")
 app.include_router(privacy_router, prefix="/api")
 app.include_router(admin_router, prefix="/api")

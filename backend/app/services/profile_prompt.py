@@ -7,7 +7,7 @@ from app.schemas.profile import ProfileAnalysisResult
 from app.core.data_privacy import redact_obvious_contact_details
 from app.services.question_rules import render_question_rules
 
-PROFILE_PROMPT_VERSION = "profile-analysis-v1.7.0"
+PROFILE_PROMPT_VERSION = "profile-analysis-v1.8.0"
 
 # These values are either direct identifiers, internal linkage metadata, or
 # questionnaire fields that are not needed to produce career guidance.  Keep
@@ -64,6 +64,28 @@ def build_model_safe_response_payload(response: AssessmentResponse) -> dict[str,
     return response_payload
 
 
+def _has_model_value(value: object) -> bool:
+    """Return whether a value carries information worth sending to the model."""
+
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return bool(value.strip())
+    if isinstance(value, (list, tuple, set, dict)):
+        return bool(value) and any(_has_model_value(item) for item in value)
+    return True
+
+
+def compact_model_payload(payload: dict[str, object]) -> dict[str, object]:
+    """Drop empty optional answers while keeping the approved data boundary."""
+
+    return {
+        field_name: value
+        for field_name, value in payload.items()
+        if _has_model_value(value)
+    }
+
+
 def redact_model_forbidden_values(text: str, response: AssessmentResponse) -> str:
     """Redact known identifiers if a user repeats them in another answer."""
 
@@ -82,17 +104,39 @@ def redact_model_forbidden_values(text: str, response: AssessmentResponse) -> st
     return redact_obvious_contact_details(redacted)
 
 
-def _render_model_safe_question_rules(selected_confusions: list[str]) -> str:
+def _render_model_safe_question_rules(
+    selected_confusions: list[str],
+    available_fields: set[str] | None = None,
+) -> str:
     rules_payload = json.loads(render_question_rules(selected_confusions))
     question_rules = rules_payload.get("questionRules")
     if isinstance(question_rules, dict):
-        for field_name in MODEL_EXCLUDED_RESPONSE_FIELDS:
-            question_rules.pop(field_name, None)
+        for field_name in list(question_rules):
+            if field_name in MODEL_EXCLUDED_RESPONSE_FIELDS:
+                question_rules.pop(field_name, None)
+        if available_fields is not None:
+            # Only retain rules for supplied answers.  Cross-field checks are
+            # useful when their referenced answer is present, but sending the
+            # entire questionnaire rulebook for every request is unnecessary.
+            question_rules = {
+                field_name: {
+                    **rule,
+                    "checks": [
+                        check
+                        for check in rule.get("checks", [])
+                        if check in available_fields
+                    ],
+                }
+                for field_name, rule in question_rules.items()
+                if field_name in available_fields
+            }
+            rules_payload["questionRules"] = question_rules
+    rules_payload.pop("source", None)
     return json.dumps(rules_payload, ensure_ascii=False, separators=(",", ":"))
 
 
 def build_profile_messages(response: AssessmentResponse, retry_reason: str | None = None) -> list[dict[str, str]]:
-    response_payload = build_model_safe_response_payload(response)
+    response_payload = compact_model_payload(build_model_safe_response_payload(response))
     response_json = json.dumps(
         response_payload,
         ensure_ascii=False,
@@ -102,6 +146,10 @@ def build_profile_messages(response: AssessmentResponse, retry_reason: str | Non
         ProfileAnalysisResult.model_json_schema(),
         ensure_ascii=False,
         separators=(",", ":"),
+    )
+    question_rules_json = _render_model_safe_question_rules(
+        response.careerConfusions,
+        available_fields=set(response_payload),
     )
 
     retry_instruction = ""
@@ -113,39 +161,27 @@ def build_profile_messages(response: AssessmentResponse, retry_reason: str | Non
         )
 
     user_content = f"""
-请根据“问题解释规则”和“学生回答”生成结构化用户画像JSON。问题解释规则来自问卷设计文档，是判断每道题用途的最高优先级依据。{retry_instruction}
+请根据“问题解释规则”和“学生回答”生成结构化用户画像 JSON。规则是判断题目用途的最高优先级依据；未出现在回答 JSON 中的字段视为未提供。{retry_instruction}
 
-分析流程必须按以下顺序执行：
-1. 先识别客观事实和已经发生的行为证据。
-2. 再识别动机、价值排序、教育意愿和5—10年愿景。
-3. 根据educationStage判断本科、硕士、博士问题的适用范围；不要对博士生继续分析读硕/读博问题，也不要对本科生套用博士生出口问题。
-4. 对每项自评能力、兴趣、他人称赞特质，查找行为证据；有成果、项目、竞赛、科研、实习或准备细节佐证才可进入verifiedStrengths，否则只能进入potentialStrengths。
-5. 结合GPA、排名、挂科重修、二专、转专业和准备细节，判断升学、学术、就业、跨专业或复合路径可行性；信息缺失时必须标为信息缺口，不得推测。
-6. 交叉检查教育意向、具体规划、目标岗位学历要求、科研兴趣、执行力、抗压、高强度承受和职业风险偏好，分别评估升学、就业、出国、体制内、企业研发等路径。
-7. 检查目标城市、行业、岗位、家庭、生活安排、技能、健康精力和风险偏好之间是否一致。
-8. 主动查找意愿与行动、目标与资源、5年与10年、价值偏好、风险偏好、执行力之间的矛盾。矛盾不是错误，需说明含义和验证行动。
-9. 根据证据强度生成Plan A、Plan B与Plan C。Plan A是主攻路径，Plan B是备选路径，两条路径必须可切换，写清下一步和切换条件；Plan C是系统建议路径，必须跳出学生原有设定，基于优势、兴趣、限制、风险和信息缺口提出第三条值得探索的方向；第二专业或原专业能力可作为备选路径依据，但不能无证据夸大。
-10. 尽量建立reportEvidenceMap，为六个报告模块列出可使用的关键证据。
-11. 对学生实际选择的每一个careerConfusions选项，必须使用selectedCareerConfusionRules中的专属用途和建议，不能合并成泛化结论。
+分析顺序：
+1. 先区分事实、已发生行为、动机、价值、意愿、自评和愿景。
+2. 按 educationStage 判断适用问题：博士生不分析读硕/读博，本科生不套用博士出口问题。
+3. 自评能力、兴趣和他人称赞只有在成果、项目、竞赛、科研、实习或准备细节佐证时进入 verifiedStrengths，否则进入 potentialStrengths。
+4. 结合学业、二专、转专业、准备、目标岗位、执行力、抗压、健康精力和风险偏好，交叉评估升学、就业、出国、体制内、企业研发等路径；缺失信息标为信息缺口，不得猜测。
+5. 检查城市、行业、岗位、家庭生活、技能和风险偏好的一致性，并记录意愿与行动、目标与资源、5年与10年之间的矛盾及验证行动。
+6. 生成有证据的 Plan A（主攻）、Plan B（可切换备选）和不重复前两者的 Plan C（系统建议或低成本验证方向），写清下一步与切换条件；尽量为六个报告模块建立 reportEvidenceMap。
+7. 每个 careerConfusions 必须使用 selectedCareerConfusionRules 中对应的用途和建议。
 
-约束：
-- 所有evidence和counterEvidence必须写成“字段名：回答内容或可核对事实”的形式，字段名必须使用学生回答JSON中的英文键名。
-- 优先保证summary、优势、风险、教育路径判断和Plan A / Plan B / Plan C有实质内容；辅助字段缺失时可使用空数组或null。
-- reportEvidenceMap建议使用JSON Schema中的六个中文模块标题；标题有轻微差异不会导致画像失败。
-- verifiedStrengths至少需要一条behavior证据；没有满足条件的优势时允许为空。
-- potentialStrengths用于表达尚待行为验证的能力或兴趣。
-- 直接身份信息只用于系统归属，不得出现在画像JSON、证据或报告证据映射中。
-- 结论信心只能为low、medium或high；路径适配只能为low、medium、high或uncertain。
-- Plan A不一定是升学，应由目标匹配、真实行动和时间窗口共同决定。
-- Plan C不能重复Plan A或Plan B，尤其要服务于“自己也不知道想干什么”或原有设定证据不足的学生；如果证据不足，Plan C应明确写成低成本验证方向，而不是确定结论。
-- 不分析、不预测也不评价薪资、收入区间、收入目标是否现实或住房购买能力；不得在画像任何字段中出现具体薪资结论。
-- 不得编造院校、岗位待遇、家庭意见或学生未提供的经历。
-- 输出应紧凑，总长度控制在约3500—5000个中文字符；同一证据不要在多个字段中反复解释。
-- summary不超过200字；单项conclusion、rationale或meaning不超过120字；列表只保留最关键的2—3项。
-- 只输出JSON对象，不要Markdown代码块、解释文字或前后缀。
+硬约束：
+- evidence、counterEvidence 使用“英文字段名：回答或可核对事实”；直接身份信息不得进入画像或 reportEvidenceMap。
+- 优先保证 summary、优势、风险、教育路径和三条计划；无证据的 verifiedStrengths 允许为空，potentialStrengths 只表示待验证。
+- confidence 只能是 low/medium/high，fitLevel 只能是 low/medium/high/uncertain。
+- 不分析或评价薪资、收入、购房能力；不得编造经历、院校、待遇或家庭意见；不做医学、心理或人格诊断。
+- summary 不超过200字，单项 conclusion/rationale/meaning 不超过120字，列表保留最关键的2—3项；同一证据不要重复解释。
+- 只输出紧凑 JSON 对象，不要 Markdown、解释或前后缀。
 
-问题解释规则：
-{_render_model_safe_question_rules(response.careerConfusions)}
+问题解释规则（仅包含本次回答涉及的字段）：
+{question_rules_json}
 
 学生回答：
 {response_json}
@@ -159,10 +195,9 @@ def build_profile_messages(response: AssessmentResponse, retry_reason: str | Non
         {
             "role": "system",
             "content": (
-                "你是一名负责高校生涯规划评估的结构化分析专家。"
-                "你的任务不是撰写报告，而是依据问卷设计规则完成证据推理，并只输出合法JSON。"
-                "每个结论必须引用具体回答；必须区分事实、行为、规划、信息、意愿、自评和愿景。"
-                "不得把自评直接写成已验证能力，不得把意愿直接写成适配结论，不得进行医学、心理或人格诊断。"
+                "你是一名高校生涯规划结构化分析专家。"
+                "依据问卷规则和回答完成证据推理，只输出符合 Schema 的 JSON；区分事实、行为、意愿和自评，"
+                "不得把自评当作已验证能力或进行医学、心理、人格诊断。"
             ),
         },
         {

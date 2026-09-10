@@ -5,7 +5,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from app.core.data_privacy import contains_obvious_contact_details
 from app.schemas.report import AdminReportUpdate
 from app.services.auth import require_admin
-from app.services.report_quality_check import check_report_quality, count_chineseish_words
+from app.services.report_quality_check import (
+    REPORT_QUALITY_VERSION,
+    check_report_quality,
+    count_chineseish_words,
+)
 from app.storage.json_db import (
     get_admin_assessments,
     find_report,
@@ -14,16 +18,17 @@ from app.storage.json_db import (
     get_admin_generation_job,
     get_admin_generation_jobs,
     get_admin_records,
+    get_admin_users,
     get_metrics,
     get_recent_reports,
     load_generation_job_recovery_draft,
-    record_admin_audit,
     update_report,
 )
 
 router = APIRouter(tags=["admin"])
 
 _GENERATION_JOB_STATUSES = {"all", "queued", "running", "success", "failed", "cancelled"}
+_USER_ROLES = {"all", "student", "admin"}
 
 
 def _validate_job_status(status: str) -> str:
@@ -32,16 +37,32 @@ def _validate_job_status(status: str) -> str:
     return status
 
 
+def _validate_user_role(role: str) -> str:
+    if role not in _USER_ROLES:
+        raise HTTPException(status_code=400, detail={"error": "不支持的用户角色"})
+    return role
+
+
 @router.get("/admin/metrics")
 def admin_metrics(admin=Depends(require_admin)):
-    record_admin_audit(admin["id"], "admin.metrics.read", "report_collection", "metrics")
     return {**get_metrics(), "recentReports": get_recent_reports()}
 
 
 @router.get("/admin/records")
 def admin_records(admin=Depends(require_admin)):
-    record_admin_audit(admin["id"], "admin.records.read", "report_collection", "all")
     return {"records": get_admin_records()}
+
+
+@router.get("/admin/users")
+def admin_users(
+    role: str = Query(default="all"),
+    keyword: str | None = Query(default=None, max_length=100),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    admin=Depends(require_admin),
+):
+    _validate_user_role(role)
+    return get_admin_users(role=role, keyword=keyword, limit=limit, offset=offset)
 
 
 @router.get("/admin/assessments")
@@ -53,7 +74,6 @@ def admin_assessments(
     admin=Depends(require_admin),
 ):
     _validate_job_status(status)
-    record_admin_audit(admin["id"], "admin.assessments.read", "assessment_collection", "all")
     return get_admin_assessments(
         status=status,
         keyword=keyword,
@@ -71,7 +91,6 @@ def admin_generation_jobs(
     admin=Depends(require_admin),
 ):
     _validate_job_status(status)
-    record_admin_audit(admin["id"], "admin.generation_jobs.read", "generation_job_collection", status)
     return get_admin_generation_jobs(
         status=status,
         keyword=keyword,
@@ -91,7 +110,6 @@ def admin_generation_job_draft(job_id: str, admin=Depends(require_admin)):
             status_code=410,
             detail={"error": "该任务没有可查看的问卷草稿，或已超过保留期限。"},
         )
-    record_admin_audit(admin["id"], "generation_job.draft.read", "generation_job", job_id)
     return draft
 
 
@@ -100,7 +118,6 @@ def admin_generation_job(job_id: str, admin=Depends(require_admin)):
     job = get_admin_generation_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail={"error": "生成任务不存在或已过期"})
-    record_admin_audit(admin["id"], "generation_job.read", "generation_job", job_id)
     return job
 
 
@@ -109,7 +126,6 @@ def admin_assessment(response_id: str, admin=Depends(require_admin)):
     response = find_response(response_id)
     if not response:
         raise HTTPException(status_code=404, detail={"error": "问卷不存在"})
-    record_admin_audit(admin["id"], "assessment.read", "assessment", response_id)
     return response.model_dump(mode="json")
 
 
@@ -119,7 +135,6 @@ def admin_audit_logs(
     offset: int = Query(default=0, ge=0),
     admin=Depends(require_admin),
 ):
-    record_admin_audit(admin["id"], "admin.audit.read", "audit_log", "all")
     return get_admin_audit_logs(limit=limit, offset=offset)
 
 
@@ -143,6 +158,7 @@ def edit_report(
     report.content = input_data.content.strip()
     report.wordCount = count_chineseish_words(report.content)
     report.qualityStatus = quality["status"]
+    report.qualityRuleVersion = REPORT_QUALITY_VERSION
     report.errorMessage = "；".join(quality["warnings"]) or None
     report.updatedAt = datetime.now(timezone.utc).isoformat()
     report.editedAt = report.updatedAt

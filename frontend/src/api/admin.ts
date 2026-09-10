@@ -20,6 +20,29 @@ export type AdminAuditLog = {
   details: Record<string, unknown>;
 };
 
+export type AdminUser = {
+  id: string;
+  username: string;
+  displayName: string;
+  role: "student" | "admin";
+  createdAt: string;
+  updatedAt: string;
+  lastActivityAt: string;
+  assessmentCount: number;
+  generationJobCount: number;
+  reportCount: number;
+};
+
+export type AdminUserList = {
+  summary: {
+    total: number;
+    studentCount: number;
+    adminCount: number;
+  };
+  total: number;
+  items: AdminUser[];
+};
+
 export function fetchAdminMetrics() {
   return apiRequest<AdminMetrics>("/admin/metrics");
 }
@@ -46,6 +69,15 @@ export function fetchAdminAssessments(params: {
   return apiRequest<{ total: number; items: AdminAssessmentRecord[] }>(
     `/admin/assessments${queryString(params)}`
   );
+}
+
+export function fetchAdminUsers(params: {
+  role?: string;
+  keyword?: string;
+  limit?: number;
+  offset?: number;
+} = {}) {
+  return apiRequest<AdminUserList>(`/admin/users${queryString(params)}`);
 }
 
 export function fetchAdminGenerationJobs(params: {

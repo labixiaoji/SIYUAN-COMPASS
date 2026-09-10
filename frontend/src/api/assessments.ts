@@ -10,6 +10,7 @@ export type GenerationFailure = {
   providerStatus?: number;
   traceId?: string;
   occurredAt?: string;
+  missingFields?: string[];
 };
 
 export type AssessmentSubmitResult = {
@@ -26,6 +27,7 @@ export type GenerationJobStatus = {
   stage: string;
   progress: number;
   message: string;
+  maxConcurrentReports?: number;
   userId?: string;
   responseId?: string;
   profileId?: string;
@@ -33,7 +35,13 @@ export type GenerationJobStatus = {
   generationStatus?: string;
   error?: string;
   attempts?: number;
+  workerAttempts?: number;
+  llmRequestAttempts?: number;
+  llmRetryCount?: number;
+  qualityRepairCount?: number;
+  lastAttemptKind?: string;
   failure?: GenerationFailure;
+  missingFields?: string[];
   draftAvailable?: boolean;
   createdAt?: string;
   updatedAt?: string;
@@ -69,7 +77,7 @@ export function submitAssessment(input: AssessmentResponseInput & { userId?: str
 }
 
 export function createAssessmentJob(input: AssessmentResponseInput & { userId?: string }, signal?: AbortSignal) {
-  return apiRequest<{ jobId: string; status: "queued" }>("/assessment-jobs", {
+  return apiRequest<{ jobId: string; status: "queued"; maxConcurrentReports?: number }>("/assessment-jobs", {
     method: "POST",
     body: JSON.stringify(input),
     signal

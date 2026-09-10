@@ -11,7 +11,7 @@ function isActiveJob(job: GenerationJobStatus) {
 }
 
 function jobStatusText(job: GenerationJobStatus) {
-  if (job.status === "queued") return "等待生成";
+  if (job.status === "queued") return `任务正在排队（系统最多同时生成${job.maxConcurrentReports ?? 3}份报告）`;
   if (job.status === "running") return "正在生成";
   if (job.status === "failed") return "生成失败";
   if (job.status === "cancelled") return "已取消";

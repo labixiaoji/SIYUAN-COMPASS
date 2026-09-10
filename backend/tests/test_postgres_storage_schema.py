@@ -4,6 +4,7 @@ import unittest
 
 STORAGE_SOURCE = Path("app/storage/json_db.py").read_text(encoding="utf-8")
 ADMIN_API_SOURCE = Path("app/api/admin.py").read_text(encoding="utf-8")
+REPORTS_API_SOURCE = Path("app/api/reports.py").read_text(encoding="utf-8")
 
 
 class PostgresStorageSchemaTest(unittest.TestCase):
@@ -41,11 +42,17 @@ class PostgresStorageSchemaTest(unittest.TestCase):
         self.assertIn("save_generation_job_if_user_idle", STORAGE_SOURCE)
         self.assertIn("FOR UPDATE", STORAGE_SOURCE)
 
+    def test_generation_queue_claims_fifo_with_skip_locked(self):
+        self.assertIn("claim_next_generation_job", STORAGE_SOURCE)
+        self.assertIn("ORDER BY created_at, job_id", STORAGE_SOURCE)
+        self.assertIn("FOR UPDATE SKIP LOCKED", STORAGE_SOURCE)
+        self.assertIn("idx_generation_jobs_queue_created_at", STORAGE_SOURCE)
+
     def test_daily_quota_counter_survives_business_data_deletion(self):
         self.assertIn("generation_quota_day", STORAGE_SOURCE)
         self.assertIn("generation_quota_used", STORAGE_SOURCE)
-        self.assertIn("speech_quota_day", STORAGE_SOURCE)
-        self.assertIn("speech_quota_used", STORAGE_SOURCE)
+        self.assertNotIn("reserve_speech_quota", STORAGE_SOURCE)
+        self.assertNotIn("SpeechQuotaStorageError", STORAGE_SOURCE)
         self.assertIn("UPDATE users", STORAGE_SOURCE)
 
     def test_users_track_jaccount_auth_source(self):
@@ -71,6 +78,22 @@ class PostgresStorageSchemaTest(unittest.TestCase):
         self.assertIn('/admin/assessments', ADMIN_API_SOURCE)
         self.assertIn("get_admin_generation_jobs", STORAGE_SOURCE)
         self.assertIn("get_admin_assessments", STORAGE_SOURCE)
+
+    def test_admin_can_list_and_summarize_users(self):
+        self.assertIn('/admin/users', ADMIN_API_SOURCE)
+        self.assertIn("get_admin_users", STORAGE_SOURCE)
+        self.assertIn("student_count", STORAGE_SOURCE)
+        self.assertIn("generation_job_count", STORAGE_SOURCE)
+        self.assertIn("last_activity_at", STORAGE_SOURCE)
+        self.assertIn('"userCount"', STORAGE_SOURCE)
+
+    def test_admin_read_endpoints_do_not_create_audit_events(self):
+        self.assertNotIn("record_admin_audit", ADMIN_API_SOURCE)
+        self.assertNotIn("record_admin_audit", REPORTS_API_SOURCE)
+        self.assertIn("action IN ('report.update', 'report.delete')", STORAGE_SOURCE)
+
+    def test_admin_report_collection_only_contains_successful_reports(self):
+        self.assertIn("WHERE reports.generation_status = 'success'", STORAGE_SOURCE)
 
     def test_failed_job_recovery_uses_retained_input_and_draft_link(self):
         self.assertIn("source_job_id", STORAGE_SOURCE)

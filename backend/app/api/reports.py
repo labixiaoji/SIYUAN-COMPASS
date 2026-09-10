@@ -6,7 +6,6 @@ from app.storage.json_db import (
     find_report,
     get_user_generation_jobs,
     get_user_reports,
-    record_admin_audit,
 )
 
 router = APIRouter(tags=["reports"])
@@ -18,8 +17,6 @@ def _get_report_or_404(report_id: str, user):
         raise HTTPException(status_code=404, detail={"error": "报告不存在"})
     if user["role"] != "admin" and report.userId != user["id"]:
         raise HTTPException(status_code=403, detail={"error": "无权查看该报告"})
-    if user["role"] == "admin":
-        record_admin_audit(user["id"], "report.read", "report", report_id)
     return report
 
 

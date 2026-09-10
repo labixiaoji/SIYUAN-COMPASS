@@ -2,9 +2,36 @@ import json
 
 from app.schemas.assessment import AssessmentResponse
 from app.schemas.profile import CareerProfile
+from app.schemas.report import CareerBlueprintDraft
 from app.services.profile_prompt import (
-    MODEL_EXCLUDED_RESPONSE_FIELDS,
+    build_model_safe_response_payload,
+    compact_model_payload,
     redact_model_forbidden_values,
+)
+
+REPORT_DIRECT_RESPONSE_FIELDS = frozenset(
+    {
+        "educationStage",
+        "grade",
+        "collegeMajor",
+        "hometown",
+        "careerConfusions",
+        "careerConfusionOther",
+        "mainConfusionText",
+        "fiveYearCity",
+        "fiveYearIndustry",
+        "fiveYearRole",
+        "fiveYearFamilyStatus",
+        "fiveYearHousingPlan",
+        "fiveYearHobbiesSkills",
+        "tenYearCity",
+        "tenYearIndustry",
+        "tenYearRole",
+        "tenYearFamilyStatus",
+        "tenYearHousingPlan",
+        "tenYearHobbiesSkills",
+        "topValuesRanked",
+    }
 )
 
 
@@ -12,11 +39,23 @@ def _list(items: list[str]) -> str:
     return "、".join(items) if items else "暂未填写"
 
 
-def build_report_messages(response: AssessmentResponse, profile: CareerProfile) -> list[dict[str, str]]:
-    # Work from a redacted model copy so a future prompt edit cannot expose a
-    # forbidden response property simply by interpolating it.
-    safe_response = response.model_copy(
-        update={field_name: None for field_name in MODEL_EXCLUDED_RESPONSE_FIELDS}
+def build_report_messages(
+    response: AssessmentResponse,
+    profile: CareerProfile,
+    retry_reason: str | None = None,
+) -> list[dict[str, str]]:
+    # Reuse the same approved, compact payload as the profile stage.  This
+    # avoids maintaining a second hand-written list of report input fields.
+    response_payload = compact_model_payload(build_model_safe_response_payload(response))
+    response_payload = {
+        field_name: value
+        for field_name, value in response_payload.items()
+        if field_name in REPORT_DIRECT_RESPONSE_FIELDS
+    }
+    response_json = json.dumps(
+        response_payload,
+        ensure_ascii=False,
+        separators=(",", ":"),
     )
     structured_profile = json.dumps(
         {
@@ -35,110 +74,57 @@ def build_report_messages(response: AssessmentResponse, profile: CareerProfile) 
             "reportEvidenceMap": profile.reportEvidenceMap,
         },
         ensure_ascii=False,
-        indent=2,
+        separators=(",", ":"),
     )
     structured_profile = redact_model_forbidden_values(structured_profile, response)
+    schema_json = json.dumps(
+        CareerBlueprintDraft.model_json_schema(),
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+    retry_instruction = ""
+    if retry_reason:
+        retry_instruction = (
+            f"\n上一次输出未通过校验，原因是：{retry_reason}。"
+            "本次仍须根据下方画像和问卷重新输出完整的六模块JSON对象，重点纠正上述错误。"
+            "后端会独立校验本次响应，不会与上一次响应合并；"
+            "因此不能只返回改动字段、缺失字段或portrait，不能省略未报错的模块。不要复述错误说明。"
+        )
     user_content = f"""
-请生成约 5000-6000 个中文字符的报告，只包含下面六个主体模块和最后的安全提醒，标题名称与顺序不得改变。各模块必须控制在规定上限内，避免重复问卷答案或展开过多生活细节：
+请根据结构化画像和补充问卷生成《我的生涯蓝图》的结构化JSON草稿。后端会负责Markdown标题、编号和安全提醒；你只负责内容，不要输出Markdown。目标是让这名学生读完后看见几种可能的未来，并知道未来半年可以从哪里开始。最终报告应约4500—5500个中文字符。{retry_instruction}
 
-一、你5—10年后的人生画像
-二、你的核心优势与风险短板
-三、人生愿景与当前路径的匹配度诊断
-四、接下来6个月，你可以做的3—5件事
-五、半年后我会问你这些问题
-六、一个值得你长期思考的问题
-安全提醒
+输出结构契约（首次生成和重试均适用）：
+- 根对象必须同时包含且仅包含这6个顶层字段：portrait、strengthsAndRisks、diagnosis、sixMonthActions、reviewQuestions、longTermQuestion。字段名与大小写必须一致，不能包在report、data或其他外层字段里。
+- portrait包含fiveYearPortrait和tenYearPortrait；strengthsAndRisks包含strengths和risks；diagnosis包含currentConfusion、underlyingProblem、pathRelationship和plans；longTermQuestion包含context和question。各字段的类型和必填子字段以文末Schema为准。
+- sixMonthActions是3—5项行动的数组，reviewQuestions是5—7个问题的数组；plans包含A、B、C三条路径。必须为全部模块提供实际内容，不能用空对象、空数组、null、占位文字或省略号代替必填内容。
+- portrait只是第一模块，完成它之后必须继续输出其余5个模块。结构完整性优先于建议篇幅；篇幅紧张时精简措辞，不能删除模块或必填字段。资料不足时明确表达不确定性，不编造事实。
 
-各模块写作要求：
+写作规则：
+1. 把文字写给眼前这一名学生。自然使用其城市、行业、岗位、价值排序、困惑和已有经历中的具体信息；不要把问卷答案换一种说法逐项复述，也不要写成给所有学生都适用的模板。
+2. portrait只负责展开未来生活画面，不分析学生当前情况，也不给行动建议。fiveYearPortrait用320—500字，以“五年后的……”直接进入一个可能的普通日子，围绕fiveYearCity、fiveYearIndustry、fiveYearRole、fiveYearFamilyStatus、fiveYearHousingPlan和fiveYearHobbiesSkills自然写出工作与生活；tenYearPortrait用320—500字，以“到了十年左右……”展开tenYear对应答案中的职业角色、生活状态和价值取舍。只使用问卷明确提供的信息，不虚构公司、住址、伴侣、职位级别等细节。不得出现GPA、排名、年级、当前不足、家庭分歧、求职步骤、建议、证据说明或“从现在到未来需要做什么”。
+3. strengthsAndRisks必须恰好包含2项优势和2项风险，每项evidence使用1—4条最能支持判断的问卷事实。studentNarrative用150—230字把能力或需要留意的地方放回学生的真实处境；futureRelevance用80—140字说明它会怎样影响未来选择。已被行为或成果支持的优势使用evidenceStatus=verified；仅来自自评、兴趣或称赞的优势使用potential；风险固定使用risk。validation可以写一项容易开始的尝试；如果第四部分已经有相同行动，可留空以避免重复。evidenceStatus和validation是内部字段名，学生可见文字不要解释“验证、已验证、待验证”等系统术语。
+4. diagnosis.currentConfusion自然写出学生选择中的拉扯，围绕这些困惑中最影响当前选择的1—2项展开：{_list(response.careerConfusions)}，并具体回应mainConfusionText；其他困惑只在确实有关时自然带到。underlyingProblem解释真正缺少的信息、经历或判断标准。这里不要列“第一、第二、第三”行动，不提前展开访谈、项目、简历或家庭沟通步骤。
+5. diagnosis.plans必须恰好包含id为A、B、C的三条不同路径。A和B沿用画像方向；C沿用画像planC，或在其为空时提出基于现有证据的低成本探索方向。title直接写学生可能走向的行业、岗位或发展组合，不写“主攻路径”“稳妥选择”等泛化标题。每条路径都要形成完整叙事：futureScene写这条路逐渐变清晰后可能出现的学习与工作日常；whyItFitsYou连接学生自己的经历、价值和取舍；currentGap指出眼下还可以补充的了解或能力；firstExperiment给出一项容易开始的真实尝试；decisionSignal写清看到什么结果时继续投入，出现什么情况时换一种走法。每条建议总计约500—700字，三条之间不能只替换岗位名称。
+6. pathRelationship会显示在三条路径之后，用180—300字比较Plan A、Plan B、Plan C分别承担什么作用，说明当前先关注哪条、为哪条保留基础、哪条适合低成本体验。不要重复每条路径的完整内容，不另列行动清单，也不替学生做终身决定。
+7. sixMonthActions围绕当前更值得优先了解的1—2条路径，整合成3项高优先级行动；确有必要时最多5项，不能再创造一套与路径无关的任务。某条路径如果暂时不值得投入，不需为了覆盖Plan A、Plan B、Plan C而强行安排行动。每项包含目的、1—4个连续步骤、可检查的完成标准和时间；validatesPlans填写实际关联的路径，pathConnection用自然的学生可见语言说明具体关系，不必重复“Plan A”等内部标识；reflectionSignal说明做完后观察什么事实，以及这些事实会怎样影响对应路径的优先级。行动要能产出作品、访谈记录、真实体验或外部反馈，不能只写“学习、提升、关注”。
+8. reviewQuestions提供5—7个半年后能依据事实回答的问题；longTermQuestion只保留一段与该学生的选择有关的说明和一个开放问题。
+9. 优先使用画像中的结论、经历、不同信号与置信度。避免大段重复；同一事实可以在不同模块中简短引用，但不要原句复制。信息不够时使用“可能”“如果”“还可以再了解”等表达。先写具体处境，再给判断；长短句交替，语气像熟悉学生情况的生涯导师。
+10. 学生可见文字优先使用“试一试、去了解、先做一步、看看是否、再想一想”等日常表达，避免反复使用“验证、证据状态、切换条件、匹配度”等分析术语。内部JSON字段名不受这条限制。
+11. 避免“基于以上分析”“综合来看”“总体而言”“值得注意的是”“可以看出”“有利于提升”“进一步提升”“增强竞争力”“实现个人价值”“在未来发展中”等套话。不要连续使用相同句式，不要为了凑字数堆同义形容词或重复鼓励。
+12. 不虚构经历、院校、家庭意见或确定结论；不分析薪资、收入或购房能力；不做医学、心理或人格诊断；不输出姓名、学号、联系方式、内部ID或时间戳。
+13. 不使用“你必须”“你一定适合”“你不适合”“你肯定”“绝对”“唯一选择”“严重不足”“竞争力很弱”等表达。
+14. 所有字符串只写可直接给学生阅读的纯文本，不包含Markdown标题、列表编号或换行；只输出紧凑JSON对象，不要代码块、解释、质量检查或字数统计。
 
-一、你5—10年后的人生画像（建议600—750字，最多850字）
-依据基本信息、5年愿景、10年愿景和价值观，概括城市、行业与岗位、生活状态和核心技能。只保留最能体现人生方向的内容，不逐项复述问卷，不展开收入、住房、家庭和爱好的琐碎细节。
+问卷补充信息（仅保留困惑、基本信息和5—10年愿景；键名为问卷字段英文名，未出现的字段表示未提供）：
+{response_json}
 
-二、你的核心优势与风险短板（建议750—900字，最多1050字）
-结合能力自评、兴趣倾向、行动基础、现有准备、资源缺口和健康精力，提炼且仅提炼2项核心优势和2项关键风险。分别使用“核心优势：”和“风险短板：”作为加粗小标题；每组编号都从1开始。每项写清表现、成因，以及对升学、就业和长期规划的影响。不要贴固定人格标签。
-
-三、人生愿景与当前路径的匹配度诊断（建议1500—1800字，最多2000字，报告重点）
-对照学历阶段、升学/就业/出国/体制内/企业研发等路径、专业背景、学业竞争力和5—10年愿景，判断当前路径与目标城市、行业、岗位和生活安排的匹配度，明确现实偏差。
-本模块开头必须固定回应学生最大困惑，依次使用三个独立小标题：
-“你现在最大的困惑是什么？”
-“这个困惑背后的真正问题是什么？”
-“接下来可以如何验证？”
-这三段必须引用学生选择的careerConfusions，并回应mainConfusionText；如果mainConfusionText未填写，也必须根据已选困惑说明当前最需要验证的问题，不允许只泛泛鼓励。
-在“你现在最大的困惑是什么？”下面必须原文写出一句：“当前选择的困惑包括：{_list(safe_response.careerConfusions)}。”，然后再解释含义。
-随后必须提出“Plan A：主攻路径”“Plan B：备选路径”和“Plan C：系统建议路径”。Plan A和Plan B必须沿用结构化画像给出的方向，只能补充表达和执行细节；Plan C必须跳出学生原有设定，基于系统识别的优势、兴趣、限制和风险给出第三条值得探索的路径，不能重复Plan A或Plan B。分别说明路径内容、适配依据、目标行业和城市契合度、进入难度、主要收益、机会成本和切换条件，最后给出清晰但不绝对的当前建议。
-“Plan A：主攻路径”“Plan B：备选路径”和“Plan C：系统建议路径”必须分别作为独立小标题；三组下面的编号都必须各自从1开始。
-
-四、接下来6个月，你可以做的3—5件事（建议1050—1300字，最多1450字）
-由长期愿景倒推3—5项具体行动。每项行动标题使用一级编号；该行动下的“做什么、为什么做、对Plan A的帮助、如何为Plan B预留后手、如何验证Plan C、完成标准、建议时间”使用无序列表，不得继续使用与行动标题同级的数字编号。覆盖学业、技能、项目或实习、信息调研、自我提升、健康管理中最相关的事项，不要泛泛而谈。
-
-五、半年后我会问你这些问题（建议350—450字，最多550字）
-给出5—7个可复盘的问题，覆盖行动完成度、行业岗位认知、核心困惑和Plan A/Plan B/Plan C是否需要切换。问题要能根据事实简短回答，不为每个问题附加长篇解释。
-
-六、一个值得你长期思考的问题（建议220—320字，最多380字）
-用一小段文字指出问题与学生的关系，再给出一句开放式问题。紧扣其最大困惑、理想与现实落差或双路径取舍，不重复前文。
-
-安全提醒
-固定提醒学生：报告是生涯探索参考，不是医学、心理诊断或人生定论；如持续感到焦虑、低落或无力，应联系学校心理咨询中心；升学就业的具体政策与机会应向学校就业指导中心、教务部门或官方渠道核实。
-
-格式要求：
-- 使用 Markdown 标题：报告标题用“#”，六个模块及安全提醒用“##”。
-- “你现在最大的困惑是什么？”“这个困惑背后的真正问题是什么？”“接下来可以如何验证？”和 Plan A / Plan B / Plan C 这六个指定小标题必须使用“###”；其他小标题可以使用“###”或单独一行的“**小标题：**”。只加粗标题、小标题和每条内容开头的短标签，不要加粗正文。
-- 编号只用于模块内部的并列项目。每个新的小标题或分组都从1重新开始，禁止跨模块连续编号。
-- Plan A、Plan B和Plan C是三个独立分组，各自下面的编号列表必须从1重新开始。
-- 第四模块只有3—5个行动标题使用数字编号；每项行动的说明字段必须使用“-”无序列表。
-- “安全提醒”必须单独使用“## 安全提醒”标题，不要用“***”等分隔线代替标题。
-- 不输出“质量检查”“生成说明”“字数统计”等系统信息。
-- 不复述整份问卷，不使用“你一定”“你必须”“唯一选择”等绝对表达。
-- 同一事实或建议最多出现一次；优先给出结论、依据和行动，删除铺垫、泛泛鼓励及重复解释。
-- 不分析、不预测也不评价薪资、收入区间、收入目标是否现实或购房能力；报告正文不得出现具体薪资判断。
-- 不输出直接身份信息。
-- 优先使用结构化画像中的结论、证据、反证与置信度。低置信度结论必须使用“可能”“有待验证”等表达。
-- 已验证优势和潜在优势必须严格区分；不得把potentialStrengths写成已经具备的成熟能力。
-- Plan A和Plan B必须沿用结构化画像给出的方向，只能补充表达和执行细节，不能擅自交换或另造路径。
-- Plan C优先沿用结构化画像中的planC；如果planC为空，则只能基于结构化画像的优势、兴趣、限制、风险、信息缺口和脱敏问卷生成低成本验证型建议，不得凭空创造经历或确定结论。
-- 画像中指出的信息缺口和矛盾必须转化为验证行动，不得用猜测填补。
-
-学生信息（已按最小必要原则脱敏）：
-- 学历阶段：{safe_response.educationStage or "未填写"}
-- 年级：{safe_response.grade}
-- 专业：{safe_response.collegeMajor}
-- 家乡或成长地：{safe_response.hometown or "未填写"}
-- 当前困惑：{_list(safe_response.careerConfusions)}；其他困惑={safe_response.careerConfusionOther or "无"}
-- 主要困惑描述：{safe_response.mainConfusionText or "未填写"}
-- 读硕士意向：{safe_response.mastersIntention}
-- 硕士规划：{safe_response.mastersPlan or "未填写"}
-- 读博士意向：{safe_response.phdIntention}
-- 博士规划：{safe_response.phdPlan or "未填写"}
-- 博士后续发展方向：{safe_response.doctoralCareerDirection or "不适用"}；其他方向={safe_response.doctoralCareerOther or "无"}
-- 教育路径原因：{_list(safe_response.educationPathReasons)}；其他原因={safe_response.educationPathReasonOther or "无"}
-- 五年愿景：城市={safe_response.fiveYearCity}；行业={safe_response.fiveYearIndustry}；岗位/角色={safe_response.fiveYearRole}
-- 五年生活：家庭状态={safe_response.fiveYearFamilyStatus}；住房={safe_response.fiveYearHousingPlan}；爱好与核心技能={safe_response.fiveYearHobbiesSkills}
-- 十年愿景：城市={safe_response.tenYearCity}；行业={safe_response.tenYearIndustry}；岗位/角色={safe_response.tenYearRole}
-- 十年生活：家庭状态={safe_response.tenYearFamilyStatus}；住房={safe_response.tenYearHousingPlan}；爱好与核心技能={safe_response.tenYearHobbiesSkills}
-- 价值观前三项：{_list(safe_response.topValuesRanked)}
-- 能力自评：逻辑={safe_response.abilityScores.logic}/5；表达={safe_response.abilityScores.expression}/5；空间设计={safe_response.abilityScores.spatialDesign}/5；人际理解={safe_response.abilityScores.interpersonal}/5
-- 兴趣倾向：动手={safe_response.interestScores.handsOn}/5；研究={safe_response.interestScores.research}/5；创作={safe_response.interestScores.creation}/5；助人={safe_response.interestScores.helping}/5；领导影响={safe_response.interestScores.leadership}/5；规则细节={safe_response.interestScores.detail}/5
-- 学业竞争力：GPA={safe_response.currentGpa or "未填写"} / {safe_response.gpaScale or "未填写"}；排名={safe_response.majorRank or "未填写"} / {safe_response.majorTotal or "未填写"}；挂科重修={safe_response.failedCourseStatus or "未填写"}
-- 第二专业：{safe_response.hasSecondMajor or "未填写"}；名称={safe_response.secondMajorName or "未填写"}；程度={safe_response.secondMajorProgress or "未填写"}；职业相关意愿={safe_response.secondMajorCareerInterest or "未填写"}
-- 转专业：{safe_response.hasTransferredMajor or "未填写"}；原专业={safe_response.originalMajorName or "未填写"}；原因={safe_response.transferReason or "未填写"}；原专业能力保留={safe_response.originalMajorRetainedSkills or "未填写"}
-- 常被称赞的特质：{_list(safe_response.praisedTraits)}
-- 特质成果证据：{safe_response.traitEvidence or "未填写"}
-- 兴趣探索：沉浸活动={safe_response.immersiveActivities or "未填写"}；喜欢知识={safe_response.favoriteKnowledgeAreas or "未填写"}；无奖励也愿意做={safe_response.selfDrivenActivities or "未填写"}；偏好工作方式={_list(safe_response.preferredWorkStyle)}
-- 已有准备：{_list(safe_response.currentPreparations)}；其他准备={safe_response.currentPreparationOther or "无"}
-- 准备细节：{safe_response.preparationDetails or "未填写"}
-- 缺少资源：{_list(safe_response.missingResources)}
-- 专业去向认知：{safe_response.majorOutcomeAwareness}
-- 岗位认知：{safe_response.targetJobAwareness}
-- 信息渠道：{_list(safe_response.jobInfoChannels)}；其他渠道={safe_response.jobInfoChannelOther or "无"}
-- 健康精力：{safe_response.healthEnergyStatus}
-- 运动情况：{safe_response.exerciseFrequency or "未填写"}
-- 长期坚持能力：{safe_response.longTermPersistence}/5
-- 执行力：{safe_response.executionStyle or "未填写"}
-- 抗压恢复：失败恢复={safe_response.failureRecoveryTime or "未填写"}；自我怀疑={safe_response.selfDoubtFrequency or "未填写"}；解决问题方式={safe_response.problemSolvingStyle or "未填写"}；需要支持={safe_response.supportNeed or "未填写"}
-- 工作承受：高强度经历={safe_response.highIntensityExperience or "未填写"}；事务性工作接受={safe_response.routineWorkTolerance or "未填写"}；职业风险偏好={safe_response.careerRiskPreference or "未填写"}
-
-结构化画像分析：
+结构化画像分析（JSON；这是报告的主要依据）：
 {structured_profile}
+
+输出必须符合以下JSON Schema：
+{schema_json}
+
+提交前在内部检查：根对象的6个顶层字段全部存在、处于同一层级，所有必填子字段齐全，数组数量与字段类型符合Schema。只返回填充完整内容的JSON对象，不输出检查过程或Schema本身。
 """.strip()
     user_content = redact_model_forbidden_values(user_content, response)
 
@@ -146,11 +132,11 @@ def build_report_messages(response: AssessmentResponse, profile: CareerProfile) 
         {
             "role": "system",
             "content": (
-                "你是一名温和、严谨、熟悉高校学生发展规律的生涯规划顾问。"
-                "请基于学生的最小必要脱敏问卷和画像生成中文《我的生涯蓝图》。"
-                "所有判断都必须能在输入信息中找到依据，不虚构经历，不做人格定论，不制造焦虑。"
-                "结构化画像已经完成分析判断，你负责依据画像证据写作，不得绕过证据重新发明结论。"
-                "报告要写实、具体、有分析深度，既指出问题，也给出可执行的三路径方案。"
+                "你是一名熟悉高校学生处境的生涯导师和结构化写作者。依据脱敏问卷和已完成的结构化画像，"
+                "为眼前这一名学生写具体、克制、有未来画面的内容，并只输出符合Schema的JSON对象。"
+                "每次响应都必须包含portrait、strengthsAndRisks、diagnosis、sixMonthActions、reviewQuestions、longTermQuestion六个顶层字段，重试时也必须完整返回。"
+                "确保结论有问卷事实支持、建议能通过实际体验和反馈来判断、三条路径有实质差异；不得虚构经历、做人格或心理诊断，"
+                "也不得绕过画像重新发明结论。"
             ),
         },
         {
