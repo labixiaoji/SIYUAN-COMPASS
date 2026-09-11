@@ -35,12 +35,18 @@ class Settings(BaseSettings):
     frontend_origins: str = "http://localhost:5173"
     auth_secret: str = "change-this-secret-before-production"
     auth_token_hours: int = 72
+    auth_cookie_name: str = "siyuan_session"
     local_auth_enabled: bool = True
-    portal_session_secret: str | None = None
-    portal_session_cookie_name: str = "session"
-    portal_session_max_age_seconds: int = 604800
-    portal_login_url: str = "https://ai4edu.sjtu.edu.cn/auth/jaccount/login"
-    portal_logout_url: str = "https://ai4edu.sjtu.edu.cn/auth/logout"
+    jaccount_client_id: str | None = None
+    jaccount_client_secret: str | None = None
+    jaccount_authorize_url: str = "https://jaccount.sjtu.edu.cn/oauth2/authorize"
+    jaccount_token_url: str = "https://jaccount.sjtu.edu.cn/oauth2/token"
+    jaccount_logout_url: str = "https://jaccount.sjtu.edu.cn/oauth2/logout"
+    jaccount_issuer: str = "https://jaccount.sjtu.edu.cn/oauth2/"
+    jaccount_redirect_uri: str | None = None
+    jaccount_scope: str = "openid"
+    jaccount_post_logout_redirect_uri: str | None = None
+    jaccount_http_timeout_seconds: float = Field(default=15, gt=0)
     public_app_url: str = "http://localhost:5173"
     app_base_path: str = "/"
     report_generation_daily_limit: int = 0
@@ -76,7 +82,13 @@ class Settings(BaseSettings):
 
     @property
     def jaccount_enabled(self) -> bool:
-        return bool(self.portal_session_secret and self.portal_login_url)
+        return bool(
+            self.jaccount_client_id
+            and self.jaccount_client_secret
+            and self.jaccount_authorize_url
+            and self.jaccount_token_url
+            and self.jaccount_redirect_uri
+        )
 
 
 @lru_cache

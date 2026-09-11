@@ -15,7 +15,7 @@ export async function apiRequest<T>(path: string, options?: RequestInit): Promis
   if (token) requestHeaders.set("Authorization", `Bearer ${token}`);
   let response: Response;
   try {
-    // jAccount 认证依赖同域门户的签名 session cookie。
+    // jAccount 认证使用后端签发的 HttpOnly Compass session cookie。
     response = await fetch(apiUrl(path), {
       credentials: "include",
       ...options,

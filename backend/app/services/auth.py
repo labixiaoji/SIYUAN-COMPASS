@@ -14,8 +14,7 @@ from fastapi import Depends, Header, HTTPException, Request
 
 from app.core.config import get_settings
 from app.schemas.auth import AuthUser
-from app.services.portal_sso import decode_portal_identity
-from app.storage.json_db import find_user, upsert_jaccount_user
+from app.storage.json_db import find_user
 
 PASSWORD_ITERATIONS = 210_000
 
@@ -125,18 +124,15 @@ def require_user(
             # issued local bearer tokens, not only hide the login form.
             user = None
 
-    # jAccount uses the signed portal session cookie.  Falling back to it
-    # also lets a browser recover when it still has an expired local token.
     if not user:
-        portal_session = request.cookies.get(settings.portal_session_cookie_name)
-        if portal_session:
-            identity = decode_portal_identity(portal_session)
-            if identity:
-                _validate_cookie_request_origin(request)
-                user = upsert_jaccount_user(
-                    username=identity["username"],
-                    display_name=identity["displayName"],
-                )
+        session_token = request.cookies.get(settings.auth_cookie_name)
+        payload = decode_access_token(session_token) if session_token else None
+        user = find_user(payload["sub"]) if payload else None
+        if user:
+            _validate_cookie_request_origin(request)
+
+    if user and not settings.local_auth_enabled and user.get("authSource") != "jaccount":
+        user = None
 
     if not user:
         raise HTTPException(status_code=401, detail={"error": "登录已失效，请重新登录"})

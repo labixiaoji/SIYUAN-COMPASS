@@ -394,11 +394,11 @@ def ensure_admin_account() -> None:
 
 
 def upsert_jaccount_user(*, username: str, display_name: str) -> dict[str, Any]:
-    """Create or refresh the local shadow account for a portal identity.
+    """Create or refresh the local shadow account for a jAccount identity.
 
-    The portal remains the source of authentication.  This table only keeps
-    the stable jAccount identifier, display name, and the separately managed
-    Compass role needed for account-scoped business records.
+    jAccount remains the source of authentication. This table only keeps the
+    stable account identifier, display name, and the separately managed Compass
+    role needed for account-scoped business records.
     """
 
     from app.services.report_generator import now_iso

@@ -10,7 +10,9 @@ export function LoginPage() {
   const { completeLogin } = useAuth();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
+  const [error, setError] = useState(
+    () => new URLSearchParams(location.search).get("jaccount_error") || ""
+  );
   const [submitting, setSubmitting] = useState(false);
   const enableLocalAuth = import.meta.env.VITE_ENABLE_LOCAL_AUTH !== "false";
   const enableJAccount = !enableLocalAuth;
@@ -48,6 +50,7 @@ export function LoginPage() {
           </p>
         </div>
         {enableJAccount && <a className="button auth-submit" href={jAccountLoginUrl(requested || "/assessment")}>使用 jAccount 登录</a>}
+        {error && <div className="error">{error}</div>}
         {enableLocalAuth && (
           <>
             <div className="auth-divider"><span>本地开发账号</span></div>
@@ -59,7 +62,6 @@ export function LoginPage() {
               <label>密码</label>
               <input className="input" autoComplete="current-password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} />
             </div>
-            {error && <div className="error">{error}</div>}
             <button className="button secondary auth-submit" disabled={submitting} type="submit">
               {submitting ? "登录中..." : "本地账号登录"}
             </button>
