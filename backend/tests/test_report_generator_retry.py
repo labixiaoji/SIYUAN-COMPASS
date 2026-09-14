@@ -128,7 +128,7 @@ class ReportGeneratorRetryTest(unittest.TestCase):
 
         self.assertIn("### Plan A：连接技术与真实需求的产品方向（主攻路径）", report.content)
         self.assertEqual(report.retryCount, 1)
-        self.assertEqual(report.qualityRuleVersion, "report-quality-v2.6.0")
+        self.assertEqual(report.qualityRuleVersion, "report-quality-v2.7.0")
         self.assertEqual(completion.await_count, 2)
         self.assertTrue(completion.await_args_list[1].kwargs["json_mode"])
         self.assertIn("JSON无法解析", build_messages.call_args_list[1].args[2])

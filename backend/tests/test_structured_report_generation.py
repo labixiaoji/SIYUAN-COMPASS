@@ -132,9 +132,32 @@ def make_draft_payload() -> dict:
 
 
 class StructuredReportGenerationTest(unittest.TestCase):
-    def test_draft_requires_three_distinct_plan_ids(self):
+    def test_draft_accepts_two_or_three_plan_ids(self):
+        for count in (2, 3):
+            payload = make_draft_payload()
+            payload["diagnosis"]["plans"] = payload["diagnosis"]["plans"][:count]
+            if count == 2:
+                payload["sixMonthActions"][2]["validatesPlans"] = ["A", "B"]
+
+            draft = CareerBlueprintDraft.model_validate(payload)
+
+            self.assertEqual(len(draft.diagnosis.plans), count)
+
+    def test_draft_requires_plan_a_and_plan_b_and_distinct_ids(self):
         payload = make_draft_payload()
         payload["diagnosis"]["plans"][2]["id"] = "B"
+
+        with self.assertRaises(ValidationError):
+            CareerBlueprintDraft.model_validate(payload)
+
+        missing_a_payload = make_draft_payload()
+        missing_a_payload["diagnosis"]["plans"] = missing_a_payload["diagnosis"]["plans"][1:]
+        with self.assertRaises(ValidationError):
+            CareerBlueprintDraft.model_validate(missing_a_payload)
+
+    def test_draft_rejects_action_reference_to_missing_plan(self):
+        payload = make_draft_payload()
+        payload["diagnosis"]["plans"] = payload["diagnosis"]["plans"][:2]
 
         with self.assertRaises(ValidationError):
             CareerBlueprintDraft.model_validate(payload)
@@ -292,6 +315,23 @@ class StructuredReportGenerationTest(unittest.TestCase):
         self.assertFalse(any("缺少模块" in item for item in quality["warnings"]))
         self.assertFalse(any("缺少关键内容" in item for item in quality["warnings"]))
         self.assertFalse(any("行动项格式或数量异常" in item for item in quality["warnings"]))
+
+    def test_renderer_and_quality_check_accept_missing_plan_c(self):
+        payload = make_draft_payload()
+        payload["diagnosis"]["plans"] = payload["diagnosis"]["plans"][:2]
+        payload["sixMonthActions"][2]["validatesPlans"] = ["A", "B"]
+
+        draft = CareerBlueprintDraft.model_validate(payload)
+        markdown = render_report_markdown(draft)
+        quality = check_report_quality(markdown)
+
+        self.assertIn("### 接下来，看看两种可能的方向", markdown)
+        self.assertIn("### Plan A：连接技术与真实需求的产品方向（主攻路径）", markdown)
+        self.assertIn("### Plan B：沿专业基础继续积累的技术方向（备选路径）", markdown)
+        self.assertNotIn("### Plan C：", markdown)
+        self.assertIn("### 把两条方向放在一起，可以怎么安排？", markdown)
+        self.assertFalse(any("Plan C" in item for item in quality["fatalWarnings"]))
+        self.assertFalse(any("缺少关键内容" in item for item in quality["warnings"]))
 
     def test_renderer_collapses_model_newlines_so_content_cannot_create_headings(self):
         payload = make_draft_payload()

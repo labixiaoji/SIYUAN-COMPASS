@@ -7,7 +7,7 @@ from typing import Literal
 
 from app.core.data_privacy import contains_obvious_contact_details
 
-REPORT_QUALITY_VERSION = "report-quality-v2.6.0"
+REPORT_QUALITY_VERSION = "report-quality-v2.7.0"
 
 REQUIRED_SECTIONS = [
     "一、你5—10年后的人生画像",
@@ -22,10 +22,9 @@ REQUIRED_SECTIONS = [
 REQUIRED_CONTENT = [
     "Plan A",
     "Plan B",
-    "Plan C",
     "你现在最想解决的困惑",
     "这份困惑背后，还缺少什么",
-    "接下来，看看三种可能的方向",
+    "接下来，看看这些可能的方向",
     "心理咨询中心",
     "就业指导中心",
 ]
@@ -85,7 +84,11 @@ STRUCTURED_SUBHEADINGS = (
     "你现在最大的困惑是什么",
     "这份困惑背后，还缺少什么",
     "这个困惑背后的真正问题是什么",
+    "接下来，看看这些可能的方向",
+    "接下来，看看两种可能的方向",
     "接下来，看看三种可能的方向",
+    "把这些方向放在一起，可以怎么安排",
+    "把两条方向放在一起，可以怎么安排",
     "把三条方向放在一起，可以怎么安排",
     "这三条方向应该怎么理解",
     "接下来可以怎么试一试",
@@ -104,13 +107,17 @@ SECTION_ALIASES = {
 SUBHEADING_ALIASES = {
     "你现在最想解决的困惑": ("你现在最想解决的困惑", "你现在最大的困惑是什么"),
     "这份困惑背后，还缺少什么": ("这份困惑背后，还缺少什么", "这个困惑背后的真正问题是什么"),
-    "接下来，看看三种可能的方向": (
+    "接下来，看看这些可能的方向": (
+        "接下来，看看这些可能的方向",
+        "接下来，看看两种可能的方向",
         "接下来，看看三种可能的方向",
         "这三条方向应该怎么理解",
         "接下来可以怎么试一试",
         "接下来可以如何验证",
     ),
-    "把三条方向放在一起，可以怎么安排": (
+    "把这些方向放在一起，可以怎么安排": (
+        "把这些方向放在一起，可以怎么安排",
+        "把两条方向放在一起，可以怎么安排",
         "把三条方向放在一起，可以怎么安排",
         "现在更适合怎样安排",
     ),
@@ -290,7 +297,7 @@ def check_report_quality(
             *PLAN_TITLES,
             "你现在最想解决的困惑",
             "这份困惑背后，还缺少什么",
-            "接下来，看看三种可能的方向",
+            "接下来，看看这些可能的方向",
         }
         aliases = SUBHEADING_ALIASES.get(required, (required,))
         if (is_subheading and not any(_has_subheading(content, alias) for alias in aliases)) or (not is_subheading and required not in content):

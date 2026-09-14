@@ -61,12 +61,15 @@ class ReportDiagnosis(_ReportDraftModel):
     currentConfusion: str = Field(min_length=20, max_length=600)
     underlyingProblem: str = Field(min_length=30, max_length=900)
     pathRelationship: str = Field(min_length=50, max_length=500)
-    plans: list[ReportPlan] = Field(min_length=3, max_length=3)
+    plans: list[ReportPlan] = Field(min_length=2, max_length=3)
 
     @model_validator(mode="after")
-    def require_all_plan_ids(self):
-        if {plan.id for plan in self.plans} != {"A", "B", "C"}:
-            raise ValueError("plans 必须分别包含 Plan A、Plan B 和 Plan C")
+    def require_core_plan_ids(self):
+        plan_ids = {plan.id for plan in self.plans}
+        if len(plan_ids) != len(self.plans):
+            raise ValueError("plans 不能包含重复路径")
+        if not {"A", "B"}.issubset(plan_ids):
+            raise ValueError("plans 必须包含 Plan A 和 Plan B；Plan C 可选")
         return self
 
 
@@ -112,6 +115,20 @@ class CareerBlueprintDraft(_ReportDraftModel):
         normalized = {"".join(question.split()) for question in self.reviewQuestions}
         if len(normalized) != len(self.reviewQuestions):
             raise ValueError("reviewQuestions 不能包含重复问题")
+        return self
+
+    @model_validator(mode="after")
+    def require_actions_reference_existing_plans(self):
+        plan_ids = {plan.id for plan in self.diagnosis.plans}
+        referenced_plan_ids = {
+            plan_id
+            for action in self.sixMonthActions
+            for plan_id in action.validatesPlans
+        }
+        missing_plan_ids = referenced_plan_ids - plan_ids
+        if missing_plan_ids:
+            labels = "、".join(f"Plan {plan_id}" for plan_id in sorted(missing_plan_ids))
+            raise ValueError(f"行动项引用了不存在的路径：{labels}")
         return self
 
 class CareerBlueprintReport(BaseModel):

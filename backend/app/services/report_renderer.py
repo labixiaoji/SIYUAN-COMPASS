@@ -15,6 +15,8 @@ PLAN_KINDS = {
     "B": "备选路径",
     "C": "探索路径",
 }
+PLAN_ORDER = ("A", "B", "C")
+PLAN_COUNT_LABELS = {2: "两", 3: "三"}
 
 
 def _inline(value: str) -> str:
@@ -63,6 +65,8 @@ def _plan_lines(plan: ReportPlan) -> list[str]:
 
 def render_report_markdown(draft: CareerBlueprintDraft) -> str:
     plans = {plan.id: plan for plan in draft.diagnosis.plans}
+    plan_ids = [plan_id for plan_id in PLAN_ORDER if plan_id in plans]
+    plan_count_label = PLAN_COUNT_LABELS[len(plan_ids)]
     lines = [
         "# 我的生涯蓝图",
         "",
@@ -90,16 +94,16 @@ def render_report_markdown(draft: CareerBlueprintDraft) -> str:
             "### 这份困惑背后，还缺少什么？",
             _inline(draft.diagnosis.underlyingProblem),
             "",
-            "### 接下来，看看三种可能的方向",
-            "下面三条方向不是三个必须同时完成的任务，而是三种可以放在一起比较的未来走法。",
+            f"### 接下来，看看{plan_count_label}种可能的方向",
+            f"下面{plan_count_label}条方向不是{plan_count_label}个必须同时完成的任务，而是{plan_count_label}种可以放在一起比较的未来走法。",
         ]
     )
-    for plan_id in ("A", "B", "C"):
+    for plan_id in plan_ids:
         lines.extend(["", *_plan_lines(plans[plan_id])])
     lines.extend(
         [
             "",
-            "### 把三条方向放在一起，可以怎么安排？",
+            f"### 把{plan_count_label}条方向放在一起，可以怎么安排？",
             _inline(draft.diagnosis.pathRelationship),
         ]
     )

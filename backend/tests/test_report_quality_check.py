@@ -57,13 +57,21 @@ class ReportQualityCheckTest(unittest.TestCase):
         self.assertEqual(quality["fatalWarnings"], [])
         self.assertTrue(any("报告长度超过" in item or "模块超过" in item for item in quality["warnings"]))
 
-    def test_missing_required_plan_is_fatal(self):
+    def test_missing_optional_plan_c_is_allowed(self):
         content = make_report(include_plan_c=False)
 
         quality = check_report_quality(content, expected_confusions=["不知道未来适合做什么"])
 
+        self.assertFalse(any("缺少关键内容：Plan C" in item for item in quality["warnings"]))
+        self.assertFalse(any("Plan C" in item for item in quality["fatalWarnings"]))
+
+    def test_missing_required_plan_b_is_fatal(self):
+        content = make_report(include_plan_c=False).replace("### Plan B：备选路径\n", "")
+
+        quality = check_report_quality(content, expected_confusions=["不知道未来适合做什么"])
+
         self.assertEqual(quality["status"], "failed")
-        self.assertTrue(any("Plan C" in item for item in quality["fatalWarnings"]))
+        self.assertIn("缺少关键内容：Plan B", quality["fatalWarnings"])
 
     def test_missing_exact_confusion_reference_is_warning(self):
         content = make_report()
