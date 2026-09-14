@@ -146,6 +146,48 @@ class StructuredReportGenerationTest(unittest.TestCase):
         with self.assertRaises(ValidationError):
             CareerBlueprintDraft.model_validate(payload)
 
+    def test_draft_accepts_one_to_three_strengths_and_risks(self):
+        for count in (1, 2, 3):
+            payload = make_draft_payload()
+            strengths = payload["strengthsAndRisks"]["strengths"]
+            risks = payload["strengthsAndRisks"]["risks"]
+            if count == 1:
+                strengths = strengths[:1]
+                risks = risks[:1]
+            elif count == 3:
+                strengths = [
+                    *strengths,
+                    dict(strengths[0], title="项目推进"),
+                ]
+                risks = [
+                    *risks,
+                    dict(risks[0], title="反馈不足"),
+                ]
+            payload["strengthsAndRisks"]["strengths"] = strengths
+            payload["strengthsAndRisks"]["risks"] = risks
+
+            draft = CareerBlueprintDraft.model_validate(payload)
+
+            self.assertEqual(len(draft.strengthsAndRisks.strengths), count)
+            self.assertEqual(len(draft.strengthsAndRisks.risks), count)
+
+    def test_draft_rejects_empty_or_four_strengths_and_risks(self):
+        for field in ("strengths", "risks"):
+            empty_payload = make_draft_payload()
+            empty_payload["strengthsAndRisks"][field] = []
+            with self.assertRaises(ValidationError):
+                CareerBlueprintDraft.model_validate(empty_payload)
+
+            four_payload = make_draft_payload()
+            items = four_payload["strengthsAndRisks"][field]
+            four_payload["strengthsAndRisks"][field] = [
+                *items,
+                dict(items[0], title="额外项目"),
+                dict(items[0], title="额外反馈"),
+            ]
+            with self.assertRaises(ValidationError):
+                CareerBlueprintDraft.model_validate(four_payload)
+
     def test_draft_rejects_empty_evidence_items(self):
         payload = make_draft_payload()
         payload["strengthsAndRisks"]["strengths"][0]["evidence"] = ["   "]

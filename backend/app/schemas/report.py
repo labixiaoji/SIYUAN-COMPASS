@@ -29,8 +29,8 @@ class ReportAnalysisItem(_ReportDraftModel):
 
 
 class ReportStrengthsAndRisks(_ReportDraftModel):
-    strengths: list[ReportAnalysisItem] = Field(min_length=2, max_length=2)
-    risks: list[ReportAnalysisItem] = Field(min_length=2, max_length=2)
+    strengths: list[ReportAnalysisItem] = Field(min_length=1, max_length=3)
+    risks: list[ReportAnalysisItem] = Field(min_length=1, max_length=3)
 
     @model_validator(mode="after")
     def require_risk_validation(self):
