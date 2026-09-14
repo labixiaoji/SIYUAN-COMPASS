@@ -220,6 +220,22 @@ class StructuredReportGenerationTest(unittest.TestCase):
 
         self.assertEqual(draft.sixMonthActions[2].validatesPlans, ["A", "B"])
 
+    def test_action_steps_allow_up_to_six_items(self):
+        payload = make_draft_payload()
+        payload["sixMonthActions"][0]["steps"] = [f"第{index}步完成测试行动" for index in range(1, 7)]
+
+        draft = CareerBlueprintDraft.model_validate(payload)
+
+        self.assertEqual(len(draft.sixMonthActions[0].steps), 6)
+
+        seven_step_payload = make_draft_payload()
+        seven_step_payload["sixMonthActions"][0]["steps"] = [
+            f"第{index}步完成测试行动" for index in range(1, 8)
+        ]
+
+        with self.assertRaises(ValidationError):
+            CareerBlueprintDraft.model_validate(seven_step_payload)
+
     def test_draft_accepts_four_relevant_evidence_items(self):
         payload = make_draft_payload()
         payload["strengthsAndRisks"]["strengths"][0]["evidence"] = [

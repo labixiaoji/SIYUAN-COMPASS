@@ -73,7 +73,7 @@ class ReportDiagnosis(_ReportDraftModel):
 class ReportAction(_ReportDraftModel):
     title: str = Field(min_length=1, max_length=80)
     purpose: str = Field(min_length=1, max_length=300)
-    steps: list[ListItemText] = Field(min_length=1, max_length=4)
+    steps: list[ListItemText] = Field(min_length=1, max_length=6)
     completionCriteria: str = Field(min_length=1, max_length=300)
     deadline: str = Field(min_length=1, max_length=80)
     validatesPlans: list[PlanId] = Field(min_length=1, max_length=3)
