@@ -2,7 +2,7 @@ import json
 
 from app.schemas.assessment import AssessmentResponse
 from app.schemas.profile import CareerProfile
-from app.schemas.report import CareerBlueprintDraft
+from app.schemas.report import CareerBlueprintDraft, ReportStrengthsAndRisks
 from app.services.profile_prompt import (
     build_model_safe_response_payload,
     compact_model_payload,
@@ -34,16 +34,42 @@ REPORT_DIRECT_RESPONSE_FIELDS = frozenset(
     }
 )
 
+STRENGTHS_AND_RISKS_JSON_EXAMPLE = json.dumps(
+    {
+        "strengths": [
+            {
+                "title": "持续推进",
+                "evidenceStatus": "verified",
+                "studentNarrative": "你在课程项目中按计划完成任务，并主动整理资料、复盘过程，已经积累了把复杂任务拆开推进的经验。",
+                "evidence": ["课程项目按期完成并主动复盘"],
+                "futureRelevance": "这能帮助你在需要整理信息、协作推进的学习和工作中形成稳定方法。",
+                "validation": "",
+            }
+        ],
+        "risks": [
+            {
+                "title": "岗位信息不足",
+                "evidenceStatus": "risk",
+                "studentNarrative": "你目前对岗位日常的判断主要来自二手信息，真实任务与想象之间还存在差距，需要通过接触和反馈逐步校准。",
+                "evidence": ["尚未进行相关岗位访谈"],
+                "futureRelevance": "如果长期缺少一手信息，后续投入可能建立在不完整的想象之上。",
+                "validation": "先完成一次岗位访谈并记录具体工作内容。",
+            }
+        ],
+    },
+    ensure_ascii=False,
+    indent=2,
+)
+
 
 def _list(items: list[str]) -> str:
     return "、".join(items) if items else "暂未填写"
 
 
-def build_report_messages(
+def _build_report_context(
     response: AssessmentResponse,
     profile: CareerProfile,
-    retry_reason: str | None = None,
-) -> list[dict[str, str]]:
+) -> tuple[str, str]:
     # Reuse the same approved, compact payload as the profile stage.  This
     # avoids maintaining a second hand-written list of report input fields.
     response_payload = compact_model_payload(build_model_safe_response_payload(response))
@@ -76,7 +102,15 @@ def build_report_messages(
         ensure_ascii=False,
         separators=(",", ":"),
     )
-    structured_profile = redact_model_forbidden_values(structured_profile, response)
+    return response_json, redact_model_forbidden_values(structured_profile, response)
+
+
+def build_report_messages(
+    response: AssessmentResponse,
+    profile: CareerProfile,
+    retry_reason: str | None = None,
+) -> list[dict[str, str]]:
+    response_json, structured_profile = _build_report_context(response, profile)
     schema_json = json.dumps(
         CareerBlueprintDraft.model_json_schema(),
         ensure_ascii=False,
@@ -97,6 +131,8 @@ def build_report_messages(
 - 根对象必须同时包含且仅包含这6个顶层字段：portrait、strengthsAndRisks、diagnosis、sixMonthActions、reviewQuestions、longTermQuestion。字段名与大小写必须一致，不能包在report、data或其他外层字段里。
 - portrait包含fiveYearPortrait和tenYearPortrait；strengthsAndRisks包含strengths和risks；diagnosis包含currentConfusion、underlyingProblem、pathRelationship和plans；longTermQuestion包含context和question。各字段的类型和必填子字段以文末Schema为准。
 - sixMonthActions是3—5项行动的数组，reviewQuestions是5—7个问题的数组；plans包含A、B、C三条路径。必须为全部模块提供实际内容，不能用空对象、空数组、null、占位文字或省略号代替必填内容。
+- strengthsAndRisks必须是对象，不能是字符串、数组或null；对象中必须直接包含strengths和risks两个数组，每个数组包含1—3个完整对象。下面示例只展示字段形状，实际内容必须替换为本学生的问卷事实，不能原样照抄：
+{STRENGTHS_AND_RISKS_JSON_EXAMPLE}
 - portrait只是第一模块，完成它之后必须继续输出其余5个模块。结构完整性优先于建议篇幅；篇幅紧张时精简措辞，不能删除模块或必填字段。资料不足时明确表达不确定性，不编造事实。
 
 写作规则：
@@ -143,4 +179,48 @@ def build_report_messages(
             "role": "user",
             "content": user_content,
         },
+    ]
+
+
+def build_strengths_and_risks_repair_messages(
+    response: AssessmentResponse,
+    profile: CareerProfile,
+    repair_reason: str,
+) -> list[dict[str, str]]:
+    response_json, structured_profile = _build_report_context(response, profile)
+    schema_json = json.dumps(
+        ReportStrengthsAndRisks.model_json_schema(),
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+    user_content = f"""
+只修复报告中的 strengthsAndRisks 字段。上一次完整报告未通过校验，原因是：{repair_reason}
+
+本次只输出一个 JSON 对象，根对象只能直接包含 strengths 和 risks 两个字段；不要输出 portrait、diagnosis、sixMonthActions 或其他字段，不要输出 Markdown、解释或代码块。strengthsAndRisks 不能是字符串、数组或 null。strengths 和 risks 都必须是 1—3 项完整对象。
+
+结构示例（仅展示结构，实际内容必须替换为本学生的问卷事实，不能原样照抄）：
+{STRENGTHS_AND_RISKS_JSON_EXAMPLE}
+
+问卷补充信息：
+{response_json}
+
+结构化画像分析：
+{structured_profile}
+
+本次输出必须符合以下字段 Schema：
+{schema_json}
+
+每个优势的 evidenceStatus 只能是 verified 或 potential，每个风险的 evidenceStatus 必须是 risk；每项 evidence 使用1—4条问卷事实。只返回修复后的 strengthsAndRisks 对象。
+""".strip()
+    user_content = redact_model_forbidden_values(user_content, response)
+
+    return [
+        {
+            "role": "system",
+            "content": (
+                "你只负责修复一个结构化 JSON 字段。必须返回 strengthsAndRisks 对象本身，"
+                "不能返回完整报告，不能把对象写成字符串、数组或 null。"
+            ),
+        },
+        {"role": "user", "content": user_content},
     ]

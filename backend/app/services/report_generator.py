@@ -15,8 +15,15 @@ from app.llm.provider import (
 )
 from app.schemas.assessment import AssessmentResponse
 from app.schemas.profile import CareerProfile
-from app.schemas.report import CareerBlueprintDraft, CareerBlueprintReport
-from app.services.report_prompt import build_report_messages
+from app.schemas.report import (
+    CareerBlueprintDraft,
+    CareerBlueprintReport,
+    ReportStrengthsAndRisks,
+)
+from app.services.report_prompt import (
+    build_report_messages,
+    build_strengths_and_risks_repair_messages,
+)
 from app.services.profile_prompt import redact_model_forbidden_values
 from app.services.report_quality_check import (
     REPORT_QUALITY_VERSION,
@@ -25,14 +32,40 @@ from app.services.report_quality_check import (
 )
 from app.services.report_renderer import render_report_markdown
 
-REPORT_PROMPT_VERSION = "career-blueprint-v2.6.0"
+REPORT_PROMPT_VERSION = "career-blueprint-v2.7.0"
 
 
 class ReportGenerationError(RuntimeError):
     pass
 
 
-def _parse_report_json(content: str) -> CareerBlueprintDraft:
+class ReportSchemaValidationError(ReportGenerationError):
+    def __init__(
+        self,
+        message: str,
+        payload: dict[str, Any],
+        validation_error: ValidationError,
+    ) -> None:
+        super().__init__(message)
+        self.payload = payload
+        self.validation_error = validation_error
+
+
+class ReportFieldRepairError(ReportGenerationError):
+    pass
+
+
+def _format_validation_details(error: ValidationError) -> str:
+    details = []
+    for item in error.errors()[:6]:
+        location = ".".join(str(part) for part in item["loc"]) or "root"
+        details.append(f"{location} {item['msg']}")
+    remaining = len(error.errors()) - len(details)
+    suffix = f"；另有{remaining}项错误" if remaining > 0 else ""
+    return f"{'；'.join(details)}{suffix}"
+
+
+def _load_json_value(content: str) -> Any:
     cleaned = content.strip()
     if cleaned.startswith("```"):
         lines = cleaned.splitlines()
@@ -49,25 +82,80 @@ def _parse_report_json(content: str) -> CareerBlueprintDraft:
             cleaned = cleaned[object_start : object_end + 1]
 
     try:
-        payload = json.loads(cleaned)
+        return json.loads(cleaned)
     except json.JSONDecodeError as error:
         raise ReportGenerationError(
             f"报告模型返回的JSON无法解析：{error.msg}（第{error.lineno}行，第{error.colno}列）"
         ) from error
 
+
+def _parse_report_json(content: str) -> CareerBlueprintDraft:
+    payload = _load_json_value(content)
     if not isinstance(payload, dict):
         raise ReportGenerationError("报告模型返回的JSON必须是对象。")
 
     try:
         return CareerBlueprintDraft.model_validate(payload)
     except ValidationError as error:
-        details = []
-        for item in error.errors()[:6]:
-            location = ".".join(str(part) for part in item["loc"]) or "root"
-            details.append(f"{location} {item['msg']}")
-        remaining = len(error.errors()) - len(details)
-        suffix = f"；另有{remaining}项错误" if remaining > 0 else ""
-        raise ReportGenerationError(f"报告JSON字段校验失败：{'；'.join(details)}{suffix}") from error
+        raise ReportSchemaValidationError(
+            f"报告JSON字段校验失败：{_format_validation_details(error)}",
+            payload,
+            error,
+        ) from error
+
+
+def _parse_strengths_and_risks_json(content: str) -> ReportStrengthsAndRisks:
+    payload = _load_json_value(content)
+    if not isinstance(payload, dict):
+        raise ReportGenerationError("strengthsAndRisks 局部修复必须返回 JSON 对象。")
+    try:
+        return ReportStrengthsAndRisks.model_validate(payload)
+    except ValidationError as error:
+        raise ReportGenerationError(
+            f"strengthsAndRisks 局部修复字段校验失败：{_format_validation_details(error)}"
+        ) from error
+
+
+def _only_strengths_and_risks_failed(error: ValidationError) -> bool:
+    errors = error.errors()
+    return bool(errors) and all(
+        item["loc"] and item["loc"][0] == "strengthsAndRisks"
+        for item in errors
+    )
+
+
+async def _repair_strengths_and_risks(
+    response: AssessmentResponse,
+    profile: CareerProfile,
+    repair_reason: str,
+    llm_stats: LLMCallStats | None,
+) -> ReportStrengthsAndRisks:
+    if llm_stats is not None:
+        llm_stats.quality_repair_count += 1
+    try:
+        call_kwargs: dict[str, Any] = {
+            "temperature": 0.2,
+            "json_mode": True,
+        }
+        if llm_stats is not None:
+            call_kwargs["stats"] = llm_stats
+        result = await create_chat_completion(
+            build_strengths_and_risks_repair_messages(
+                response,
+                profile,
+                repair_reason,
+            ),
+            **call_kwargs,
+        )
+        if llm_stats is not None:
+            llm_stats.last_attempt_kind = "quality_repair"
+        if result.get("finishReason") == "length":
+            raise ReportGenerationError("strengthsAndRisks 局部修复因长度限制被截断")
+        return _parse_strengths_and_risks_json(result["content"])
+    except ReportGenerationError as error:
+        raise ReportFieldRepairError(f"strengthsAndRisks 局部修复失败：{error}") from error
+    except Exception as error:
+        raise ReportFieldRepairError(f"strengthsAndRisks 局部修复调用失败：{error}") from error
 
 
 def now_iso() -> str:
@@ -119,9 +207,36 @@ async def generate_report(
         try:
             if result.get("finishReason") == "length":
                 raise ReportGenerationError("模型输出因长度限制被截断")
-            draft = _parse_report_json(
-                redact_model_forbidden_values(result["content"], response)
-            )
+            try:
+                draft = _parse_report_json(
+                    redact_model_forbidden_values(result["content"], response)
+                )
+            except ReportSchemaValidationError as error:
+                if not _only_strengths_and_risks_failed(error.validation_error):
+                    raise
+                if progress_callback:
+                    progress_callback(
+                        "report_retrying",
+                        82,
+                        "优势与风险字段结构未通过校验，正在进行局部修复。",
+                    )
+                repaired_strengths_and_risks = await _repair_strengths_and_risks(
+                    response,
+                    profile,
+                    str(error),
+                    llm_stats,
+                )
+                repaired_payload = dict(error.payload)
+                repaired_payload["strengthsAndRisks"] = repaired_strengths_and_risks.model_dump(
+                    mode="json"
+                )
+                try:
+                    draft = CareerBlueprintDraft.model_validate(repaired_payload)
+                except ValidationError as merge_error:
+                    raise ReportFieldRepairError(
+                        "strengthsAndRisks 局部修复后报告仍未通过校验："
+                        f"{_format_validation_details(merge_error)}"
+                    ) from merge_error
             content = render_report_markdown(draft)
             if progress_callback:
                 progress_callback("report_validating", 88, "报告草稿已返回，正在校验字段、证据、路径、行动和隐私信息。")
@@ -141,6 +256,8 @@ async def generate_report(
                 raise ReportGenerationError(f"报告内容质量校验失败：{'；'.join(reasons)}")
             retry_count = attempt
             break
+        except ReportFieldRepairError:
+            raise
         except ReportGenerationError as error:
             retry_reason = f"{error}；finish_reason={result.get('finishReason') or 'unknown'}"
             if attempt == 1:

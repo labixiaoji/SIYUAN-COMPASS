@@ -33,6 +33,81 @@ LENGTH_WARNING_QUALITY = {
 
 
 class ReportGeneratorRetryTest(unittest.TestCase):
+    def test_strengths_and_risks_is_repaired_as_a_field(self) -> None:
+        invalid_payload = make_draft_payload()
+        invalid_payload["strengthsAndRisks"] = "优势和风险说明"
+        repaired_field = make_draft_payload()["strengthsAndRisks"]
+        repaired_field["strengths"][0]["title"] = "修复后的优势"
+        repaired_field["risks"][0]["title"] = "修复后的风险"
+        completion = AsyncMock(
+            side_effect=[
+                {
+                    "content": json.dumps(invalid_payload, ensure_ascii=False),
+                    "modelName": "test-model",
+                    "finishReason": "stop",
+                },
+                {
+                    "content": json.dumps(repaired_field, ensure_ascii=False),
+                    "modelName": "test-model",
+                    "finishReason": "stop",
+                },
+            ]
+        )
+        with (
+            patch("app.services.report_generator.is_llm_configured", return_value=True),
+            patch(
+                "app.services.report_generator.build_report_messages",
+                return_value=[{"role": "user", "content": "full report"}],
+            ) as build_messages,
+            patch(
+                "app.services.report_generator.build_strengths_and_risks_repair_messages",
+                return_value=[{"role": "user", "content": "field repair"}],
+            ) as build_field_repair_messages,
+            patch("app.services.report_generator.create_chat_completion", completion),
+        ):
+            report = asyncio.run(generate_report(_response(), SimpleNamespace(id="profile-1")))
+
+        self.assertEqual(completion.await_count, 2)
+        self.assertEqual(build_messages.call_count, 1)
+        self.assertEqual(build_field_repair_messages.call_count, 1)
+        self.assertIn("修复后的优势", report.content)
+        self.assertIn("修复后的风险", report.content)
+
+    def test_strengths_and_risks_repair_failure_does_not_retry_full_report(self) -> None:
+        invalid_payload = make_draft_payload()
+        invalid_payload["strengthsAndRisks"] = "优势和风险说明"
+        completion = AsyncMock(
+            side_effect=[
+                {
+                    "content": json.dumps(invalid_payload, ensure_ascii=False),
+                    "modelName": "test-model",
+                    "finishReason": "stop",
+                },
+                {
+                    "content": "局部修复仍不是对象",
+                    "modelName": "test-model",
+                    "finishReason": "stop",
+                },
+            ]
+        )
+        with (
+            patch("app.services.report_generator.is_llm_configured", return_value=True),
+            patch(
+                "app.services.report_generator.build_report_messages",
+                return_value=[{"role": "user", "content": "full report"}],
+            ) as build_messages,
+            patch(
+                "app.services.report_generator.build_strengths_and_risks_repair_messages",
+                return_value=[{"role": "user", "content": "field repair"}],
+            ),
+            patch("app.services.report_generator.create_chat_completion", completion),
+        ):
+            with self.assertRaisesRegex(ReportGenerationError, "strengthsAndRisks 局部修复失败"):
+                asyncio.run(generate_report(_response(), SimpleNamespace(id="profile-1")))
+
+        self.assertEqual(completion.await_count, 2)
+        self.assertEqual(build_messages.call_count, 1)
+
     def test_invalid_first_json_is_repaired_once(self) -> None:
         valid_json = json.dumps(make_draft_payload(), ensure_ascii=False)
         completion = AsyncMock(
